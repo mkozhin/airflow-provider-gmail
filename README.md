@@ -224,6 +224,13 @@ and `aws_conn_id` (default `"aws_default"`).
   report "no work", so the operator behind it never runs. Drive overwrite
   backfills **without** that sensor — manually, or from a dedicated sensor-less
   backfill DAG (see `example_gmail_s3_backfill.py`).
+  **PAUSE the daily DAG before backfilling over a shared prefix.** `max_active_runs=1`
+  is per-DAG — it serializes a backfill DAG's own runs but does **not** serialize
+  it against the daily DAG over the same prefix. Run both at once and the
+  check-then-act manifest dedup races: duplicate delivery, and an `overwrite=True`
+  backfill can overwrite the `_manifest.json` of a *failed* daily attempt with a
+  foreign `run_id`, losing the daily pipeline's delivery on retry. Pause the daily
+  DAG (and let any in-flight run finish) before starting the backfill.
 - **Parallel runs require `max_active_runs=1`.** The manifest check is a
   check-then-act (`_read_manifest` → write); two overlapping `DagRun`s of one
   export could both miss the manifest and both download and deliver the same

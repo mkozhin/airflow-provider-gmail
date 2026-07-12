@@ -23,6 +23,16 @@ Why ``date_from`` / ``date_to`` from ``dag_run.conf`` (ADR-0004):
   requested period and nothing else. Both parameters are templated; they default
   to empty strings so that an un-parametrized trigger fails loudly at execution
   rather than silently backfilling the wrong window.
+
+WARNING — PAUSE the daily DAG before running this backfill over a shared prefix:
+  This DAG shares ``PREFIX = "gmail/avito"`` with the daily ``example_gmail_to_s3``
+  DAG. ``max_active_runs=1`` is per-DAG — it serializes replays against each other,
+  but it does NOT serialize this backfill against the daily DAG over the same
+  prefix. Run them concurrently and the check-then-act manifest dedup races:
+  duplicate delivery, and — worse — an ``overwrite=True`` backfill can overwrite
+  the ``_manifest.json`` of a failed daily attempt with a foreign ``run_id``,
+  losing the daily pipeline's delivery on retry. Before starting a backfill over a
+  shared prefix, PAUSE the daily DAG (and let any in-flight run finish).
 """
 
 from __future__ import annotations

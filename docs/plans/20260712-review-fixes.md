@@ -405,17 +405,18 @@
 - Modify: `README_RU.md`
 - Modify: `tests/test_example_dags.py` (если фиксирует docstring/комментарии)
 
-- [ ] в module docstring backfill-примера добавить явное предупреждение:
+- [x] в module docstring backfill-примера добавить явное предупреждение:
   `max_active_runs=1` — per-DAG и НЕ сериализует backfill с дневным DAG над
   тем же префиксом; перед backfill **приостановите (pause) дневной DAG**,
   иначе гонка check-then-act: двойная доставка, а overwrite-backfill может
   перезаписать манифест упавшей дневной попытки чужим `run_id` (потеря
   доставки на retry)
-- [ ] то же предупреждение в README.md / README_RU.md (раздел про
+- [x] то же предупреждение в README.md / README_RU.md (раздел про
   backfill/overwrite)
-- [ ] write/update tests: `tests/test_example_dags.py` продолжает проходить
-  (импорт DAG-ов не сломан)
-- [ ] run tests — must pass before task 11
+- [x] write/update tests: `tests/test_example_dags.py` продолжает проходить
+  (импорт DAG-ов не сломан) — тест не пинит текст docstring/комментариев,
+  правок не потребовалось; 337 passed
+- [x] run tests — must pass before task 11
 
 ### Task 11: Cleanup — MANIFEST_FILENAME и единый владелец раскладки
 
