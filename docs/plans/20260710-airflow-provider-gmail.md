@@ -1336,7 +1336,7 @@ return delivered                                # → XCom: только пис�
 **Files:**
 - Create: `.github/workflows/tests.yml`
 
-- [ ] `tests.yml`: `pytest` при push и PR по **матрице
+- [x] `tests.yml`: `pytest` при push и PR по **матрице
       `python-version: ["3.10", "3.11", "3.12"]`** — **версии обязательно в кавычках**:
       без них YAML прочитает `3.10` как число `3.1`, и constraints-URL соберётся на
       несуществующий `constraints-3.1.txt` (соответствует `requires-python = ">=3.10"`
@@ -1344,19 +1344,19 @@ return delivered                                # → XCom: только пис�
       **под версию Python из матрицы**, иначе `>=2.9,<3` подтянет 2.11:
       `pip install "apache-airflow==2.9.1" --constraint
       "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.1/constraints-${{ matrix.python-version }}.txt"`
-- [ ] **пин Amazon-провайдера согласован с Task 1**: `apache-airflow-providers-amazon==8.20.0`
+- [x] **пин Amazon-провайдера согласован с Task 1**: `apache-airflow-providers-amazon==8.20.0`
       (точное значение из constraints Airflow 2.9.1, одинаковое для Python 3.10/3.11/3.12).
       Без верхней границы свежий Amazon-провайдер требует Airflow ≥2.10 — поэтому точный пин
       `==`, единый в Task 1 и здесь. CI-шаг сверяет, что пин совпадает с constraints-файлом
       (страховка от дрейфа при будущем бампе целевого Airflow)
-- [ ] явно установить dev-extra (`pytest`, `pytest-cov`, `build`, `twine`) и extra `s3`
-- [ ] **отдельный CI job «установка без `[s3]`»**: в чистом окружении поставить пакет
+- [x] явно установить dev-extra (`pytest`, `pytest-cov`, `build`, `twine`) и extra `s3`
+- [x] **отдельный CI job «установка без `[s3]`»**: в чистом окружении поставить пакет
       **без** extra `s3` и проверить, что импортируются `GmailHook`, локальный оператор
       (`GmailAttachmentsToLocalOperator`) и Gmail-only `GmailAttachmentSensor` —
       доказательство, что опциональная Amazon-зависимость реально изолирована ленивыми
       импортами (Task 9/Task 12), а не только объявлена в extra. CI, всегда ставящий `[s3]`,
       этот дефект не поймал бы
-- [ ] запустить `pytest` — должен пройти до перехода к задаче 15b
+- [x] запустить `pytest` — должен пройти до перехода к задаче 15b
 
 ### Task 15b: packaging smoke test
 

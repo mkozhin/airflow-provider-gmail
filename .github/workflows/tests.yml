@@ -1,0 +1,107 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    name: pytest (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Versions MUST stay quoted: unquoted 3.10 parses as the number 3.1
+        # and the constraints URL would point at constraints-3.1.txt.
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # setuptools-scm needs full history/tags to resolve the version.
+          fetch-depth: 0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Fetch Airflow 2.9.1 constraints
+        run: |
+          curl -fsSL \
+            "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.1/constraints-${{ matrix.python-version }}.txt" \
+            -o constraints.txt
+
+      - name: Verify Amazon provider pin matches constraints (guard against drift)
+        run: |
+          # Pin declared in pyproject.toml's s3 extra must equal the version the
+          # official Airflow 2.9.1 constraints file resolves to.
+          pinned=$(grep -oE 'apache-airflow-providers-amazon==[0-9]+\.[0-9]+\.[0-9]+' pyproject.toml | head -n1)
+          constrained=$(grep -oiE '^apache-airflow-providers-amazon==[0-9]+\.[0-9]+\.[0-9]+' constraints.txt | head -n1)
+          echo "pyproject pin:   $pinned"
+          echo "constraints pin: $constrained"
+          if [ "$pinned" != "apache-airflow-providers-amazon==8.20.0" ]; then
+            echo "::error::pyproject Amazon pin is not apache-airflow-providers-amazon==8.20.0"
+            exit 1
+          fi
+          if [ "${pinned,,}" != "${constrained,,}" ]; then
+            echo "::error::Amazon pin drift: pyproject=$pinned vs constraints=$constrained"
+            exit 1
+          fi
+
+      - name: Install target Airflow with constraints
+        run: python -m pip install "apache-airflow==2.9.1" --constraint constraints.txt
+
+      - name: Install package with dev and s3 extras
+        run: python -m pip install -e ".[dev,s3]" --constraint constraints.txt
+
+      - name: Run tests
+        # Default run; the packaging smoke test is excluded via addopts in pyproject.
+        run: python -m pytest
+
+  install-without-s3:
+    name: install without [s3] (lazy-import isolation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Fetch Airflow 2.9.1 constraints
+        run: |
+          curl -fsSL \
+            "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.1/constraints-3.12.txt" \
+            -o constraints.txt
+
+      - name: Install target Airflow with constraints
+        run: python -m pip install "apache-airflow==2.9.1" --constraint constraints.txt
+
+      - name: Install package WITHOUT the s3 extra
+        # Deliberately no [s3]: the Amazon provider must NOT be pulled in.
+        run: python -m pip install -e . --constraint constraints.txt
+
+      - name: Assert Amazon provider is absent
+        run: |
+          if python -m pip show apache-airflow-providers-amazon >/dev/null 2>&1; then
+            echo "::error::apache-airflow-providers-amazon is installed but the s3 extra was not requested"
+            exit 1
+          fi
+
+      - name: Import Gmail-only symbols (lazy imports isolate the Amazon dep)
+        run: |
+          python - <<'PY'
+          from airflow_provider_gmail.hooks.gmail import GmailHook
+          from airflow_provider_gmail.operators.gmail import GmailAttachmentsToLocalOperator
+          from airflow_provider_gmail.sensors.gmail import GmailAttachmentSensor
+          print("imports OK without [s3]:", GmailHook, GmailAttachmentsToLocalOperator, GmailAttachmentSensor)
+          PY
