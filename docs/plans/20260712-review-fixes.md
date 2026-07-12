@@ -353,28 +353,28 @@
 - Modify: `src/airflow_provider_gmail/sensors/gmail.py`
 - Modify: `tests/test_sensor_s3.py`
 
-- [ ] `_has_processed_manifest` (sensors/gmail.py:298-312): принять `run_id`,
+- [x] `_has_processed_manifest` (sensors/gmail.py:298-312): принять `run_id`,
   парсить читаемый манифест в переменную и возвращать
   `manifest.run_id != run_id` (квитанция ТЕКУЩЕГО рана = работа осталась,
   `False`); `poke` передаёт `context["run_id"]`
-- [ ] обновить docstrings `_has_processed_manifest`, `poke` и класса
+- [x] обновить docstrings `_has_processed_manifest`, `poke` и класса
   (sensors/gmail.py:218-259): «обработано = квитанция чужого рана», описать
   сценарий clear-всего-рана; поправить неточную фразу про «operator behind it
   honestly skips» (для текущего run_id оператор делает DELIVER_ONLY)
-- [ ] переписать `test_poke_manifest_of_any_run_counts_as_processed`
+- [x] переписать `test_poke_manifest_of_any_run_counts_as_processed`
   (tests/test_sensor_s3.py:231-237): манифест ЧУЖОГО рана → processed
   (`poke=False`), манифест ТЕКУЩЕГО рана → работа есть (`poke=True`)
-- [ ] обновить существующие тесты, которые новый контракт переворачивает:
+- [x] обновить существующие тесты, которые новый контракт переворачивает:
   хелпер `_seed_manifest` по умолчанию сеет манифест с ТЕКУЩИМ `run_id`
   (`RUN`) — `test_poke_false_when_message_present_and_valid_manifest`
   (tests/test_sensor_s3.py:199) и `test_poke_false_when_all_messages_have_manifests`
   (:221) начнут падать; для «processed»-кейсов сеять манифест ЧУЖОГО рана
   (или поменять ассерты); в `test_poke_true_when_two_messages_one_has_manifest`
-  (:212) поправить премиссу «msg1 processed»
-- [ ] write tests: сценарий восстановления — манифест текущего `run_id` у
+  (:212) поправить премиссу «msg1 processed» (введён `PAST_RUN`)
+- [x] write tests: сценарий восстановления — манифест текущего `run_id` у
   единственного письма → `poke() is True`; корректный `ManifestError`-контракт
   не задет (битый манифест по-прежнему валит poke)
-- [ ] run tests — must pass before task 9
+- [x] run tests — must pass before task 9
 
 ### Task 9: Честная документация soft_fail
 

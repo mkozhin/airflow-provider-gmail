@@ -230,18 +230,28 @@ class GmailAttachmentToS3Sensor(GmailAttachmentSensor):
 
     Where :class:`GmailAttachmentSensor` answers "is there a matching email",
     this storage-aware subclass answers "is there *new* work": it discards every
-    matched message that already has a ``_manifest.json`` in S3 and returns
-    ``True`` only if at least one **unprocessed** message remains. It is the
-    natural gate for :class:`GmailAttachmentsToS3Operator` — with
-    ``mark_processed=False`` a processed message stays in the Gmail result set
-    until the ``lookback_days`` window ends, so the Gmail-only sensor would keep
-    firing while the operator behind it honestly skips; this one does not.
+    matched message already processed by a **different** run and returns ``True``
+    only if at least one **unprocessed** message remains. It is the natural gate
+    for :class:`GmailAttachmentsToS3Operator` — with ``mark_processed=False`` a
+    processed message stays in the Gmail result set until the ``lookback_days``
+    window ends, so the Gmail-only sensor would keep firing while the operator
+    behind it does :attr:`~airflow_provider_gmail.manifest.Decision.SKIP`; this
+    one does not.
 
     "Processed" is decided by the manifest, never by a Gmail label:
     :meth:`_filter_processed_label` is ``False`` so processed messages are not
     filtered out by their label id (symmetric with the S3 operator — ADR-0001).
-    Each candidate's
-    manifest is looked up at the **same** key the operator writes (the shared
+    A message counts as **processed only when a manifest from a *different*
+    (past) ``run_id`` exists**. A manifest carrying the *current* ``run_id`` is
+    **not** "processed": it means the current run wrote the manifest but has not
+    finished delivering, so the operator behind the sensor will re-run as
+    :attr:`~airflow_provider_gmail.manifest.Decision.DELIVER_ONLY` (not skip),
+    and the sensor keeps firing. This is exactly the **whole-run-clear
+    recovery** scenario: after a run's task instances are cleared and the run is
+    re-run under the *same* ``run_id``, a stale current-run manifest must not
+    mask the still-pending work — so the sensor treats it as work remaining.
+    Each candidate's manifest is looked up at the **same** key the operator
+    writes (the shared
     :func:`~airflow_provider_gmail.utils.paths.manifest_key`), so sensor and
     operator can never disagree on where a message's manifest lives.
 
@@ -306,31 +316,44 @@ class GmailAttachmentToS3Sensor(GmailAttachmentSensor):
         """Never filter the search by label (ADR-0001): new work is the manifest."""
         return False
 
-    def _has_processed_manifest(self, msg: MessageWithAttachments) -> bool:
-        """Whether ``msg`` already has a valid manifest at its S3 key.
+    def _has_processed_manifest(self, msg: MessageWithAttachments, run_id: str) -> bool:
+        """Whether ``msg`` was already processed by a **different** run.
 
-        Reads and **validates** the manifest through :meth:`Manifest.from_json`;
-        a corrupt manifest raises :class:`ManifestError` (poke fails) instead of
-        being silently counted as processed. The key is built from the shared
-        :func:`manifest_key`, the same join the S3 operator writes.
+        "Processed" means a manifest exists **and** it was written by another
+        (past) ``run_id`` — this mirrors ADR-0001: a manifest carrying the
+        *current* ``run_id`` means work still remains (the operator behind the
+        sensor will do :attr:`~airflow_provider_gmail.manifest.Decision.DELIVER_ONLY`,
+        not skip), so it is **not** counted as processed and this returns
+        ``False``. Only a manifest from a different run returns ``True``.
+
+        Reads and **validates** the manifest through :meth:`Manifest.from_json`
+        (so a corrupt manifest raises :class:`ManifestError` and fails the poke
+        instead of being silently counted as processed), then compares
+        ``manifest.run_id`` to the current ``run_id``. The key is built from the
+        shared :func:`manifest_key`, the same join the S3 operator writes.
         """
         dt = to_local_date(msg.internal_date, self.timezone).isoformat()
         key = manifest_key(self.prefix, dt, msg.message_id)
         hook = self._s3_hook()
         if not hook.check_for_key(key, bucket_name=self.bucket):
             return False
-        Manifest.from_json(hook.read_key(key, bucket_name=self.bucket))
-        return True
+        manifest = Manifest.from_json(hook.read_key(key, bucket_name=self.bucket))
+        return manifest.run_id != run_id
 
     def poke(self, context: Any) -> bool:
         """``True`` iff at least one matched message has no processed manifest.
 
         Reuses :meth:`GmailAttachmentSensor._find_messages` (identical query to
-        the operator), then drops every candidate whose ``_manifest.json`` is
-        already in S3. A corrupt manifest fails the poke via
-        :class:`ManifestError` — it is never silently treated as processed.
+        the operator), then drops every candidate already processed by a
+        **different** run. A candidate whose manifest carries the *current*
+        ``run_id`` (``context["run_id"]``) still counts as work — that is the
+        whole-run-clear recovery path (see the class docstring) — so ``poke``
+        keeps firing until the operator re-writes/completes it. A corrupt
+        manifest fails the poke via :class:`ManifestError` — it is never
+        silently treated as processed.
         """
+        run_id = context["run_id"]
         for msg in self._find_messages(context):
-            if not self._has_processed_manifest(msg):
+            if not self._has_processed_manifest(msg, run_id):
                 return True
         return False

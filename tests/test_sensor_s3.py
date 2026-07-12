@@ -199,10 +199,14 @@ def test_poke_true_when_message_present_and_no_manifest():
     assert _poke(sensor, FakeGmailHook([msg])) is True
 
 
+PAST_RUN = "scheduled__2026-07-11T06:00:00+00:00"
+
+
 def test_poke_false_when_message_present_and_valid_manifest():
+    # A manifest from a *different* (past) run means the message is processed.
     store: dict = {}
     msg = _message("msg1", "report.xlsx")
-    _seed_manifest(store, msg)
+    _seed_manifest(store, msg, run_id=PAST_RUN)
     sensor = _make_sensor(store)
     assert _poke(sensor, FakeGmailHook([msg])) is False
 
@@ -216,7 +220,8 @@ def test_poke_true_when_two_messages_one_has_manifest():
     store: dict = {}
     msg1 = _message("msg1", "a.xlsx")
     msg2 = _message("msg2", "b.xlsx")
-    _seed_manifest(store, msg1)  # msg1 processed, msg2 is new work
+    # msg1 processed by a *past* run, msg2 is new work → poke is True on msg2.
+    _seed_manifest(store, msg1, run_id=PAST_RUN)
     sensor = _make_sensor(store)
     assert _poke(sensor, FakeGmailHook([msg1, msg2])) is True
 
@@ -225,19 +230,49 @@ def test_poke_false_when_all_messages_have_manifests():
     store: dict = {}
     msg1 = _message("msg1", "a.xlsx")
     msg2 = _message("msg2", "b.xlsx")
-    _seed_manifest(store, msg1)
-    _seed_manifest(store, msg2)
+    # Both processed by a *past* run → no new work remains.
+    _seed_manifest(store, msg1, run_id=PAST_RUN)
+    _seed_manifest(store, msg2, run_id=PAST_RUN)
     sensor = _make_sensor(store)
     assert _poke(sensor, FakeGmailHook([msg1, msg2])) is False
 
 
 def test_poke_manifest_of_any_run_counts_as_processed():
-    # The sensor drops any message with a valid manifest regardless of run_id.
+    # A manifest from a *different* (past) run → processed, poke is False.
     store: dict = {}
     msg = _message("msg1", "a.xlsx")
-    _seed_manifest(store, msg, run_id="scheduled__2026-07-11T06:00:00+00:00")
+    _seed_manifest(store, msg, run_id=PAST_RUN)
     sensor = _make_sensor(store)
     assert _poke(sensor, FakeGmailHook([msg])) is False
+
+    # A manifest from the *current* run → work still remains, poke is True
+    # (mirror of Decision.DELIVER_ONLY, ADR-0001).
+    store_current: dict = {}
+    _seed_manifest(store_current, msg, run_id=RUN)
+    sensor_current = _make_sensor(store_current)
+    assert _poke(sensor_current, FakeGmailHook([msg])) is True
+
+
+def test_poke_true_on_current_run_manifest_whole_run_clear_recovery():
+    # Whole-run-clear recovery: after clearing a run's task instances and
+    # re-running under the *same* run_id, a stale current-run manifest must not
+    # mask the still-pending work — the single message still counts as work.
+    store: dict = {}
+    msg = _message("msg1", "a.xlsx")
+    _seed_manifest(store, msg, run_id=RUN)
+    sensor = _make_sensor(store)
+    assert _poke(sensor, FakeGmailHook([msg])) is True
+
+
+def test_current_run_manifest_still_validates_corrupt_manifest_fails_poke():
+    # Even on the current-run recovery path the manifest is read and validated:
+    # a corrupt manifest fails the poke rather than being silently skipped.
+    store: dict = {}
+    msg = _message("msg1", "a.xlsx")
+    store[_manifest_key(msg)] = b"{ not valid json"
+    sensor = _make_sensor(store)
+    with pytest.raises(ManifestError):
+        _poke(sensor, FakeGmailHook([msg]))
 
 
 # -- corrupt manifest fails the poke (does not silently stick) ---------------
