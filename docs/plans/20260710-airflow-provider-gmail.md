@@ -1363,7 +1363,7 @@ return delivered                                # → XCom: только пис�
 **Files:**
 - Create: `tests/test_packaging.py`
 
-- [ ] packaging smoke test — **pytest-тест в `tests/test_packaging.py`, помеченный
+- [x] packaging smoke test — **pytest-тест в `tests/test_packaging.py`, помеченный
       `@pytest.mark.packaging`** (маркер зарегистрирован и исключён из дефолтного прогона
       в Task 1 через `addopts = "-m 'not packaging'"`); запускается явно
       `pytest -m packaging` — отдельным CI job (в `tests.yml` из 15a) и вручную при правках
@@ -1375,10 +1375,18 @@ return delivered                                # → XCom: только пис�
       `import airflow_provider_gmail; get_provider_info()` возвращает `connection-types`
       → `ProvidersManager()` находит conn-type `gmail` и грузит `GmailHook` →
       `airflow providers list` содержит пакет. Обычный `pytest` по рабочему дереву
-      **не доказывает**, что wheel содержит пакет и entry point
-- [ ] **явно прогнать `pytest -m packaging`** — из-за глобального `addopts = "-m 'not packaging'"`
-      обычный «полный `pytest`» этот тест НЕ включает; отдельная команда обязательна
-- [ ] запустить обычный `pytest` (без packaging) — регрессия не сломана; перейти к 15c
+      **не доказывает**, что wheel содержит пакет и entry point.
+      Тест сам `pytest.skip`-ается с внятной причиной, если сеть/pip недоступны
+      (build+twine всё равно прогоняются); в CI сеть есть — идёт полный путь.
+      Потребовало бампа dev-инструментов (`twine>=6`, `packaging>=24.2`): сборка через
+      build-isolation тянет свежий setuptools и пишет Metadata-Version 2.4
+      (PEP 639 `license = "Apache-2.0"`), а старый `twine 5.0`/`pkginfo 1.10` его не понимал
+- [x] **явно прогнать `pytest -m packaging`** — из-за глобального `addopts = "-m 'not packaging'"`
+      обычный «полный `pytest`» этот тест НЕ включает; отдельная команда обязательна.
+      Прогнан: `pytest -m packaging tests/test_packaging.py` → 1 passed (build → twine check →
+      чистый venv с airflow==2.9.1 → wheel → ProvidersManager + `airflow providers list`)
+- [x] запустить обычный `pytest` (без packaging) — регрессия не сломана; перейти к 15c
+      (229 passed, 1 deselected)
 
 ### Task 15c: публикация на PyPI
 
