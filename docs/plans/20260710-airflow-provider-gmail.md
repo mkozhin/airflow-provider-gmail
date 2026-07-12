@@ -630,7 +630,7 @@ return delivered                                # → XCom: только пис�
 - Create: `tests/test_provider_info.py`
 - Create: `.gitignore`, `LICENSE`
 
-- [ ] создать `pyproject.toml` **валидным TOML-синтаксисом** (не `setup.cfg`!), с
+- [x] создать `pyproject.toml` **валидным TOML-синтаксисом** (не `setup.cfg`!), с
       полными PEP 621 metadata:
       - `[build-system]` → `requires = ["setuptools>=64", "setuptools-scm>=8"]`,
         `build-backend = "setuptools.build_meta"`
@@ -655,24 +655,24 @@ return delivered                                # → XCom: только пис�
         `addopts = "-m 'not packaging'"`, плюс `testpaths = ["tests"]`. Без этого
         packaging-тест из Task 15b гоняется по умолчанию (медленный/хрупкий) и pytest
         сыплет warning про unknown marker
-- [ ] ⚠️ **bootstrap до любых тестов**: сделать initial commit (иначе setuptools-scm
+- [x] **bootstrap до любых тестов**: сделать initial commit (иначе setuptools-scm
       не определит версию), затем `pip install -e ".[dev,s3]" --constraint
       https://raw.githubusercontent.com/apache/airflow/constraints-2.9.1/constraints-3.12.txt`.
       Суффикс `-3.12` в URL constraints **должен совпадать с версией Python окружения**
       (для 3.10/3.11 — `constraints-3.10.txt`/`constraints-3.11.txt`; см. матрицу CI в Task 15a).
       Editable install генерирует `_version.py` и делает пакет импортируемым из `src`;
       `fallback_version` страхует сборку из архива без `.git`
-- [ ] объявить entry point `apache_airflow_provider` →
+- [x] объявить entry point `apache_airflow_provider` →
       `airflow_provider_gmail:get_provider_info`
-- [ ] реализовать `get_provider_info()` с `package-name`, `name`, `description`,
+- [x] реализовать `get_provider_info()` с `package-name`, `name`, `description`,
       `versions`. **`versions` брать из сгенерированной версии** (`__version__` в
       `__init__.py`, читающий `_version.py` от setuptools-scm), а **не хардкодить строкой** —
       иначе значение разъедется с версией wheel/тега. **`connection-types` пока НЕ
       добавлять**: `hook-class-name` указывал бы на несуществующий класс, и
       `ProvidersManager` не смог бы его загрузить. Секция появится в Task 3 вместе с самим хуком
-- [ ] написать тест: `get_provider_info()` возвращает обязательные ключи; **`versions`
+- [x] написать тест: `get_provider_info()` возвращает обязательные ключи; **`versions`
       совпадает с `airflow_provider_gmail.__version__`** (нет ручного дрейфа)
-- [ ] запустить `pytest` — должен пройти до перехода к задаче 2
+- [x] запустить `pytest` — должен пройти до перехода к задаче 2
 
 ### Task 2: Утилиты разбора MIME
 

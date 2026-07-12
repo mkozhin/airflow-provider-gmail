@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "airflow-provider-gmail"
+dynamic = ["version"]
+description = "Apache Airflow provider that finds Gmail messages by criteria and stores their attachments in S3-compatible storage or on local disk"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [
+    {name = "mkozhin", email = "cyril.grapes@gmail.com"},
+]
+keywords = ["airflow", "gmail", "provider", "attachments", "s3"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Apache Airflow",
+    "Framework :: Apache Airflow :: Provider",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "apache-airflow>=2.9,<3",
+    "google-auth",
+    "google-api-python-client",
+]
+
+[project.optional-dependencies]
+s3 = ["apache-airflow-providers-amazon==8.20.0"]
+dev = [
+    "google-auth-oauthlib",
+    "pytest",
+    "pytest-cov",
+    "build",
+    "twine",
+]
+
+[project.urls]
+Homepage = "https://github.com/mkozhin/airflow-provider-gmail"
+Repository = "https://github.com/mkozhin/airflow-provider-gmail"
+Changelog = "https://github.com/mkozhin/airflow-provider-gmail/blob/main/CHANGELOG.md"
+Issues = "https://github.com/mkozhin/airflow-provider-gmail/issues"
+
+[project.entry-points."apache_airflow_provider"]
+provider_info = "airflow_provider_gmail:get_provider_info"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+version_file = "src/airflow_provider_gmail/_version.py"
+fallback_version = "0.0.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not packaging'"
+markers = ["packaging: slow packaging smoke test (excluded by default)"]
