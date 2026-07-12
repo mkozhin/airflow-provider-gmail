@@ -19,9 +19,12 @@ them fails loudly rather than silently mis-behaving. ``BaseOperatorMeta`` is
 incompatible with ``abc.ABCMeta``, so "abstract" is enforced by raising
 ``NotImplementedError`` rather than by :mod:`abc`.
 
-Actual ``execute()`` orchestration (the full run loop) lives in Task 8; this
-module deliberately stops at the interface, the pure helpers and the
-manifest-assembly helper.
+:meth:`GmailAttachmentsBaseOperator.execute` orchestrates the full run loop —
+resolve the window, build the query, then for each matched message map the
+:class:`Decision` tri-state (``manifest.py``, ADR-0001) onto download/deliver
+actions in the strict order *attachments → manifest → label*. The dedup that
+makes S3 delivery idempotent lives entirely in :func:`decide` over the
+manifest's ``run_id``; the operator only maps its verdict onto actions.
 """
 
 from __future__ import annotations
@@ -29,13 +32,17 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Sequence
 from datetime import date, datetime
+from functools import cached_property
+from typing import Any
 from zoneinfo import ZoneInfo
 
+from airflow.exceptions import AirflowSkipException
 from airflow.models import BaseOperator
 
-from airflow_provider_gmail.hooks.gmail import GmailHook
-from airflow_provider_gmail.manifest import FileEntry, Manifest
+from airflow_provider_gmail.hooks.gmail import GmailHook, resolve_label_name
+from airflow_provider_gmail.manifest import Decision, FileEntry, Manifest, decide
 from airflow_provider_gmail.utils.mime import Attachment, sanitize_filename
+from airflow_provider_gmail.window import Window
 
 
 def parse_date_range(
@@ -156,6 +163,12 @@ class GmailAttachmentsBaseOperator(BaseOperator):
     ``0`` (Task 10, ADR-0001).
     """
 
+    #: The operator's *default* ``lookback_days``. Used only to decide whether to
+    #: WARN that an explicit date range is overriding a **non-default**
+    #: ``lookback_days`` (ADR-0004). The local operator overrides both this and
+    #: the ``__init__`` default to ``0`` (Task 10).
+    default_lookback_days: int = 7
+
     template_fields: Sequence[str] = (
         "query",
         "source",
@@ -223,6 +236,11 @@ class GmailAttachmentsBaseOperator(BaseOperator):
         self.overwrite = overwrite
         self.date_from = date_from
         self.date_to = date_to
+
+    @cached_property
+    def hook(self) -> GmailHook:
+        """The :class:`GmailHook` bound to :attr:`gmail_conn_id` (built once)."""
+        return GmailHook(self.gmail_conn_id)
 
     # -- Storage seam (ADR-0006): implemented by concrete subclasses ---------
 
@@ -300,3 +318,115 @@ class GmailAttachmentsBaseOperator(BaseOperator):
         )
         self._write(f"{rel_dir}/_manifest.json", manifest.to_json())
         return manifest
+
+    # -- Orchestration -------------------------------------------------------
+
+    def execute(self, context: Any) -> list[str]:
+        """Find, download and deliver the matching messages (see the plan pseudocode).
+
+        The reference day and ``run_id`` come from ``context`` — never
+        ``date.today()`` — so the window is stable between retries of the same
+        task (a message written by a failed attempt is still found on retry and
+        re-delivered from its current-``run_id`` manifest). For every matched
+        message the :class:`Decision` tri-state maps onto actions in the strict
+        order *attachments → manifest → label*; the manifest is always written
+        **last** so its presence proves the attachments landed.
+
+        Returns the canonical manifest paths of the messages processed **in this
+        run only** (XCom). Raises :class:`AirflowSkipException` when nothing was
+        delivered.
+        """
+        run_id = context["run_id"]
+        ref_day = context["data_interval_end"]
+        label_name = resolve_label_name(self.label_suffix)
+
+        date_from, date_to = parse_date_range(self.date_from, self.date_to)
+        if (date_from is not None or date_to is not None) and (
+            self.lookback_days != self.default_lookback_days
+        ):
+            # This resolve site owns the WARNING (ADR-0004): once the Window is
+            # built the hook no longer knows the original lookback_days nor
+            # whether it was default for this operator (S3 7 / local 0).
+            self.log.warning(
+                "An explicit date_from/date_to range was given; the non-default "
+                "lookback_days=%s is ignored.",
+                self.lookback_days,
+            )
+
+        window = Window.resolve(
+            ref_day, self.timezone, self.lookback_days, date_from, date_to
+        )
+        query = self.hook.build_query(
+            window,
+            self._filter_processed_label(),
+            label_name,
+            self.from_email,
+            self.subject_contains,
+            self.has_attachment,
+            self.filename_contains,
+            self.query,
+        )
+
+        delivered: list[str] = []
+        to_label: list[str] = []
+        for msg in self.hook.find_messages_with_attachments(
+            query, self.attachment_pattern
+        ):
+            dt = to_local_date(msg.internal_date, self.timezone)
+            rel_dir = f"dt={dt}/{msg.message_id}"
+            manifest_path = self._destination_path(f"{rel_dir}/_manifest.json")
+
+            # overwrite=True → do not read the manifest at all: a corrupt manifest
+            # must not raise ManifestError during the forced re-download that
+            # overwrite exists for (ADR-0001).
+            manifest = None if self.overwrite else self._read_manifest(rel_dir)
+            decision = decide(manifest, run_id, self.overwrite)
+            # Label catch-up is orthogonal to Decision — always append.
+            to_label.append(msg.message_id)
+
+            if decision is Decision.DELIVER_ONLY:
+                # Manifest of THIS run (a failed attempt): files are on storage
+                # but never reached downstream → deliver the path, do not download.
+                delivered.append(manifest_path)
+                continue
+            if decision is Decision.SKIP:
+                # Manifest of a PAST run: already went through layer 2 → drop.
+                self.log.info(
+                    "Message %s was processed by an earlier run, skipping.",
+                    msg.message_id,
+                )
+                continue
+
+            # Decision.DOWNLOAD_AND_DELIVER
+            files: list[FileEntry] = []
+            for attachment, safe_name in resolve_collisions(msg.attachments):
+                data = self.hook.download_attachment(msg.message_id, attachment)
+                rel_path = f"{rel_dir}/{safe_name}"
+                self._write(rel_path, data)
+                files.append(
+                    FileEntry(
+                        name=attachment.filename,
+                        size=len(data),
+                        path=self._destination_path(rel_path),
+                    )
+                )
+
+            # Manifest written LAST (after every attachment) — its presence is
+            # the proof the message is fully on storage.
+            self._write_manifest(
+                rel_dir,
+                msg.message_id,
+                msg.internal_date,
+                msg.subject,
+                msg.from_,
+                files,
+                run_id,
+            )
+            delivered.append(manifest_path)
+
+        if self.mark_processed and to_label:
+            self.hook.mark_processed(to_label, label_name)
+
+        if not delivered:
+            raise AirflowSkipException("no new messages")
+        return delivered
