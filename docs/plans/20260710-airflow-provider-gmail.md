@@ -1189,37 +1189,37 @@ return delivered                                # → XCom: только пис�
 - Create: `src/airflow_provider_gmail/sensors/gmail.py`
 - Create: `tests/test_sensor.py`
 
-- [ ] `GmailAttachmentSensor(BaseSensorOperator)` с теми же параметрами фильтра,
+- [x] `GmailAttachmentSensor(BaseSensorOperator)` с теми же параметрами фильтра,
       что и у операторов (включая `lookback_days`, `timezone`, `date_from`/`date_to`,
       `mark_processed`, `overwrite`); `template_fields` как у базового оператора
-- [ ] **`poke(context)` строит запрос ровно как оператор** — та же цепочка:
+- [x] **`poke(context)` строит запрос ровно как оператор** — та же цепочка:
       `ref_day = context["data_interval_end"]` → **общий парс-хелпер дат** (см. ниже) →
       `Window.resolve(ref_day, timezone, lookback_days, date_from, date_to)` →
       `hook.build_query(window, self._filter_processed_label(), label_name, <поля>, query)`.
       Иначе сенсор искал бы другое множество писем, чем оператор, и срабатывал/висел не
       в такт. Логику query не дублировать — те же `build_query`/`Window`, что у оператора
-- [ ] `_filter_processed_label() -> bool` у базового сенсора возвращает `self.mark_processed`
+- [x] `_filter_processed_label() -> bool` у базового сенсора возвращает `self.mark_processed`
       (пара к local-оператору: дедуп через Gmail-метку). `GmailAttachmentToS3Sensor`
       переопределит его на `False` (Task 12): S3-сенсор фильтрует по манифесту, не по метке
-- [ ] `poke()` зовёт **тот же `parse_date_range(...)` (определён в Task 7b)** до
+- [x] `poke()` зовёт **тот же `parse_date_range(...)` (определён в Task 7b)** до
       `Window.resolve` — парс/валидацию диапазона не дублировать, чтобы сенсор и оператор
       не разъехались (как общие `Window`/`build_query`)
-- [ ] **WARNING про игнор `lookback_days` при заданном диапазоне эмитит и сенсор** —
+- [x] **WARNING про игнор `lookback_days` при заданном диапазоне эмитит и сенсор** —
       он тоже владелец места резолва окна; поведение симметрично оператору (Task 8)
-- [ ] `poke()` → `True`, если `hook.find_messages_with_attachments(query, pattern)` непусто
-- [ ] `mode="reschedule"` **выставляется дефолтом в `__init__`**, а не только
+- [x] `poke()` → `True`, если `hook.find_messages_with_attachments(query, pattern)` непусто
+- [x] `mode="reschedule"` **выставляется дефолтом в `__init__`**, а не только
       описывается в docstring (в `poke` сенсор держит слот часами)
-- [ ] docstring: сенсор знает только про Gmail. При `mark_processed=False` он будет
+- [x] docstring: сенсор знает только про Gmail. При `mark_processed=False` он будет
       срабатывать на уже обработанном письме до конца окна `lookback_days` —
       для «есть ли новая работа» нужен `GmailAttachmentToS3Sensor`.
       `soft_fail=True` даёт `skipped` по таймауту вместо алерта
-- [ ] написать тесты: письмо есть → `True`; писем нет → `False`; письмо есть, но
+- [x] написать тесты: письмо есть → `True`; писем нет → `False`; письмо есть, но
       вложение не совпало с паттерном → `False`; `mode` по умолчанию `"reschedule"`;
       **паритет query: при одинаковых параметрах `poke` базового сенсора и `execute`
       локального оператора строят идентичную строку запроса** (то же окно, диапазон,
       timezone и одинаковый `_filter_processed_label()` → одинаковый `-label:`) — общий
       `build_query`/`Window` вызван из обоих
-- [ ] запустить `pytest` — должен пройти до перехода к задаче 12
+- [x] запустить `pytest` — должен пройти до перехода к задаче 12
 
 ### Task 12: GmailAttachmentToS3Sensor — «есть ли новая работа»
 
