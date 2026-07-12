@@ -139,20 +139,32 @@ def iter_attachments(payload: dict) -> Iterator[Attachment]:
     only if it is ``inline`` **and** its ``mimeType`` starts with ``image/``.
     Inline non-images (PDF, xlsx) stay attachments — a Content-ID does not
     demote them.
+
+    A part that qualifies as an attachment is yielded **as-is** and its own
+    nested MIME tree (``parts``) is **not** descended into. This matters for a
+    forwarded ``message/rfc822`` part with a ``filename`` and a body source: it
+    is delivered as a single ``.eml`` attachment rather than having the inner
+    message's own attachments leak out under the outer message's id. The
+    guarantee has a boundary — an ``rfc822`` part that carries a ``filename``
+    but **no** body source (only ``parts``, no ``attachmentId``/``data``) is
+    *not* an attachment, so the walk still recurses into it.
     """
     yield from _walk(payload)
 
 
 def _walk(part: dict) -> Iterator[Attachment]:
-    children = part.get("parts")
-    if children:
-        # A multipart container is not itself an attachment; recurse into it.
-        for child in children:
-            yield from _walk(child)
-        return
+    # Test the part as an attachment first. A qualifying attachment (non-empty
+    # filename + body source, not an inline image) is yielded and we do NOT
+    # recurse into any nested tree it carries — a forwarded message/rfc822 part
+    # stays one .eml instead of leaking the inner message's attachments.
     attachment = _as_attachment(part)
     if attachment is not None:
         yield attachment
+        return
+    # Not an attachment: a multipart/* container (no filename) or an rfc822 part
+    # with a filename but no body source. Recurse into its children as before.
+    for child in part.get("parts") or []:
+        yield from _walk(child)
 
 
 def _as_attachment(part: dict) -> Attachment | None:

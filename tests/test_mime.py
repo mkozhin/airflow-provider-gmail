@@ -204,6 +204,46 @@ def test_empty_file_recognized_as_attachment():
     assert att.attachment_id is None
 
 
+def test_forwarded_eml_delivered_as_single_attachment():
+    # A message/rfc822 part with a filename + body source is one .eml
+    # attachment; the inner message's own attachment (inner.xlsx) must NOT leak
+    # out under the outer message's id.
+    result = list(iter_attachments(payload_of("forwarded_eml.json")))
+    assert [a.filename for a in result] == ["forwarded.eml"]
+    assert result[0].mime_type == "message/rfc822"
+    assert result[0].attachment_id == "ANGjdJ_forwarded_eml"
+    assert "inner.xlsx" not in [a.filename for a in result]
+
+
+def test_rfc822_without_body_source_still_recurses():
+    # Boundary: an rfc822 part with a filename but NO body source (only parts,
+    # no attachmentId/data) is not an attachment, so the walk recurses into it
+    # and yields the inner attachment.
+    payload = {
+        "mimeType": "multipart/mixed",
+        "parts": [
+            {
+                "mimeType": "message/rfc822",
+                "filename": "forwarded.eml",
+                "parts": [
+                    {
+                        "mimeType": "application/pdf",
+                        "filename": "inner.pdf",
+                        "body": {"attachmentId": "id-inner"},
+                    }
+                ],
+            }
+        ],
+    }
+    assert [a.filename for a in iter_attachments(payload)] == ["inner.pdf"]
+
+
+def test_nested_mime_tree_behavior_unchanged():
+    # Ordinary multipart containers (no filename) still recurse as before.
+    result = list(iter_attachments(payload_of("nested_mime.json")))
+    assert [a.filename for a in result] == ["deep_report.pdf"]
+
+
 def test_part_without_any_body_source_is_not_attachment():
     payload = {
         "mimeType": "multipart/mixed",

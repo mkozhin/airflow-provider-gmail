@@ -189,23 +189,23 @@
 - Create: `tests/fixtures/gmail/forwarded_eml.json`
 - Modify: `tests/test_mime.py`
 
-- [ ] переставить `_walk` (mime.py:145-154): сначала `_as_attachment(part)`;
+- [x] переставить `_walk` (mime.py:145-154): сначала `_as_attachment(part)`;
   если часть — вложение (непустой `filename` + источник тела, не inline-
   картинка) — yield и `return`, в `parts` не спускаться; иначе рекурсия как
   раньше (контейнеры `multipart/*` без `filename` не задеваются)
-- [ ] обновить docstrings `iter_attachments`/`_walk`: часть с `filename` и
+- [x] обновить docstrings `iter_attachments`/`_walk`: часть с `filename` и
   источником тела — вложение, даже если несёт вложенное дерево
   (message/rfc822); вложения внутреннего письма не поднимаются; явно оговорить
   границу гарантии: rfc822-часть с `filename`, но БЕЗ источника тела (только
   `parts`, без `attachmentId`/`data`) вложением не считается — по ней
   по-прежнему идёт рекурсия
-- [ ] создать фикстуру `forwarded_eml.json`: message/rfc822-часть с
+- [x] создать фикстуру `forwarded_eml.json`: message/rfc822-часть с
   `filename="forwarded.eml"`, `body.attachmentId` и вложенным `parts[]`,
   внутри которого своё вложение (например `inner.xlsx`)
-- [ ] write tests: `.eml` выдаётся как вложение; `inner.xlsx` внутреннего
+- [x] write tests: `.eml` выдаётся как вложение; `inner.xlsx` внутреннего
   письма НЕ выдаётся; обычные multipart-фикстуры (`nested_mime.json`) не
   изменили поведение
-- [ ] run tests — must pass before task 3
+- [x] run tests — must pass before task 3
 
 ### Task 3: Разбиение имени файла через os.path.splitext (пустой stem, dotfiles)
 

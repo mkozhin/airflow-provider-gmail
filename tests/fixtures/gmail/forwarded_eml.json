@@ -1,0 +1,59 @@
+{
+  "id": "eml0003fwd",
+  "internalDate": "1752000000000",
+  "payload": {
+    "mimeType": "multipart/mixed",
+    "headers": [
+      {
+        "name": "Subject",
+        "value": "Fwd: quarterly numbers"
+      },
+      {
+        "name": "From",
+        "value": "sender@example.com"
+      }
+    ],
+    "parts": [
+      {
+        "mimeType": "text/plain",
+        "filename": "",
+        "body": {
+          "size": 18,
+          "data": "U2VlIGF0dGFjaGVkLg=="
+        }
+      },
+      {
+        "mimeType": "message/rfc822",
+        "filename": "forwarded.eml",
+        "body": {
+          "size": 8192,
+          "attachmentId": "ANGjdJ_forwarded_eml"
+        },
+        "parts": [
+          {
+            "mimeType": "multipart/mixed",
+            "filename": "",
+            "parts": [
+              {
+                "mimeType": "text/plain",
+                "filename": "",
+                "body": {
+                  "size": 12,
+                  "data": "aW5uZXIgYm9keQ=="
+                }
+              },
+              {
+                "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "filename": "inner.xlsx",
+                "body": {
+                  "size": 4096,
+                  "attachmentId": "ANGjdJ_inner_xlsx"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
