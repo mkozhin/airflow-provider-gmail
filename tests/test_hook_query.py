@@ -119,6 +119,27 @@ def test_value_with_quote_and_backslash_is_escaped():
     assert q == 'subject:"a\\"b\\\\c"'
 
 
+def test_value_with_colon_is_quoted():
+    # A bare colon would parse as an operator; quoting keeps it literal.
+    q = _q(_hook(), subject_contains="re:invoice")
+    assert q == 'subject:"re:invoice"'
+
+
+def test_value_with_braces_is_quoted():
+    q = _q(_hook(), subject_contains="{urgent}")
+    assert q == 'subject:"{urgent}"'
+
+
+def test_value_with_parens_is_quoted():
+    q = _q(_hook(), subject_contains="(a)")
+    assert q == 'subject:"(a)"'
+
+
+def test_email_value_not_quoted():
+    q = _q(_hook(), from_email="user@example.com")
+    assert q == "from:user@example.com"
+
+
 # --- has_attachment ------------------------------------------------------------
 
 

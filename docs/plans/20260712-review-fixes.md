@@ -259,17 +259,18 @@
 - Modify: `src/airflow_provider_gmail/hooks/gmail.py`
 - Modify: `tests/test_hook_query.py`
 
-- [ ] в `_field_value` (hooks/gmail.py:59-68) сменить условие: значение
+- [x] в `_field_value` (hooks/gmail.py:59-68) сменить условие: значение
   квотируется, если НЕ матчится `^[\w.@+-]+$` (Unicode); `_escape` внутри
   кавычек сохранить; docstring — новое правило + известное ограничение про
   недокументированность эскейпинга у Gmail
-- [ ] write tests: `subject_contains="re:invoice"` →
+- [x] write tests: `subject_contains="re:invoice"` →
   `subject:"re:invoice"`; `"{urgent}"` → в кавычках; `"(a)"` → в кавычках;
   `user@example.com` — без кавычек; кириллица одним словом — без кавычек
   (`test_cyrillic_single_word_not_quoted` остаётся зелёным)
-- [ ] обновить существующие тесты `test_hook_query.py`, фиксирующие старый
-  контракт «квотирование только при пробелах/кавычках/бэкслеше»
-- [ ] run tests — must pass before task 6
+- [x] обновить существующие тесты `test_hook_query.py`, фиксирующие старый
+  контракт «квотирование только при пробелах/кавычках/бэкслеше» (существующие
+  ассерты остались валидны — метасимвольных значений без кавычек не было)
+- [x] run tests — must pass before task 6
 
 ### Task 6: Hook — dedup меток по labelIds вместо -label в запросе
 

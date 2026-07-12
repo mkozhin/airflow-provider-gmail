@@ -56,16 +56,29 @@ def _escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+# A value that fully matches this "safe" pattern may be emitted bare; anything
+# else is quoted. ``\w`` is Unicode by default, so single-word Cyrillic
+# ("отчет") still counts as safe and stays unquoted.
+_SAFE_FIELD_VALUE = re.compile(r"^[\w.@+-]+$")
+
+
 def _field_value(value: str) -> str:
     """Format a structured-field value: quote when it needs it, escape inside.
 
-    A value is wrapped in double quotes when it contains whitespace or a
-    character that must be escaped (``"`` or ``\\``); otherwise it is emitted
-    bare. Escaping of inner ``"`` and ``\\`` always happens inside the quotes.
+    A value is emitted bare **only** when it fully matches the safe pattern
+    ``^[\\w.@+-]+$`` (word characters — Unicode, so Cyrillic counts — plus
+    ``.``, ``@``, ``+`` and ``-``). Anything else, including query
+    metacharacters such as ``:``, ``{}``, ``()`` and whitespace, is wrapped in
+    double quotes so Gmail treats it as a literal rather than parsing it as an
+    operator. Inner ``"`` and ``\\`` are escaped inside the quotes.
+
+    Known limitation: Gmail does not document backslash-escaping inside quoted
+    terms, so :func:`_escape` is best-effort. For the structured search fields
+    this is accepted; the critical processed-label dedup deliberately avoids the
+    query string altogether (see the plan / ADR-0001).
     """
-    needs_quote = any(c.isspace() for c in value) or '"' in value or "\\" in value
     escaped = _escape(value)
-    return f'"{escaped}"' if needs_quote else escaped
+    return escaped if _SAFE_FIELD_VALUE.match(value) else f'"{escaped}"'
 
 
 def _b64url_decode(data: str) -> bytes:
