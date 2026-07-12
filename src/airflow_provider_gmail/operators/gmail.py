@@ -430,3 +430,118 @@ class GmailAttachmentsBaseOperator(BaseOperator):
         if not delivered:
             raise AirflowSkipException("no new messages")
         return delivered
+
+
+class GmailAttachmentsToS3Operator(GmailAttachmentsBaseOperator):
+    """Download matching Gmail attachments and store them in S3 (or S3-compatible).
+
+    Concrete S3 implementation of the storage seam (ADR-0006). Attachments and
+    the per-message ``_manifest.json`` are written under
+    ``<prefix>/dt=<dt>/<message_id>/`` inside ``bucket``; the manifest paths of
+    the messages processed **in this run** are returned in XCom (ADR-0001).
+
+    Deduplication of delivery rests on the manifest + ``run_id`` alone: a message
+    whose ``_manifest.json`` carries a **past** ``run_id`` is neither re-downloaded
+    nor delivered, one with the **current** ``run_id`` (a failed prior attempt of
+    this run) is delivered without re-downloading, and one with no manifest is
+    downloaded and delivered. Because the label is never mixed into the search
+    (:meth:`_filter_processed_label` → ``False``), a marked-but-not-returned run is
+    still found and delivered on retry.
+
+    Works with any S3-compatible object store, not only AWS: point the underlying
+    Amazon Connection at a custom ``endpoint_url`` via its ``extra`` (e.g. Yandex
+    Object Storage, MinIO). Each attachment is loaded **fully into memory** before
+    being written (Gmail caps incoming messages at 25 MB, so that is the ceiling).
+
+    ``overwrite=True`` forces a re-download regardless of any manifest — the
+    manifest is not even read, so a corrupt ``_manifest.json`` cannot break the
+    recovery it exists for. It is incompatible with the storage-aware
+    ``GmailAttachmentToS3Sensor`` (which would report "no work" for a message that
+    already has a manifest); run overwrite backfills without that sensor.
+
+    The ``apache-airflow-providers-amazon`` package (the ``s3`` extra) is imported
+    lazily inside the methods that need it, so this module still imports — and the
+    local operator still works — when the extra is not installed.
+    """
+
+    template_fields: Sequence[str] = (
+        *GmailAttachmentsBaseOperator.template_fields,
+        "bucket",
+        "prefix",
+    )
+
+    def __init__(
+        self,
+        *,
+        bucket: str,
+        prefix: str = "",
+        aws_conn_id: str = "aws_default",
+        overwrite: bool = False,
+        **kwargs,
+    ) -> None:
+        super().__init__(overwrite=overwrite, **kwargs)
+        self.bucket = bucket
+        self.prefix = prefix
+        self.aws_conn_id = aws_conn_id
+        self._cached_s3_hook = None
+
+    def _s3_hook(self):
+        """The cached :class:`S3Hook`, importing the Amazon provider lazily.
+
+        The import lives here (not at module top level) so ``operators/gmail.py``
+        remains importable without the ``s3`` extra — the local operator shares
+        this module (Task 9).
+        """
+        if self._cached_s3_hook is None:
+            from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+
+            self._cached_s3_hook = S3Hook(aws_conn_id=self.aws_conn_id)
+        return self._cached_s3_hook
+
+    @staticmethod
+    def _split_rel_dir(rel_dir: str) -> tuple[str, str]:
+        """Split ``dt=<dt>/<message_id>`` into ``(dt, message_id)``."""
+        dt_segment, message_id = rel_dir.split("/", 1)
+        return dt_segment.removeprefix("dt="), message_id
+
+    def _write(self, rel_path: str, data: bytes) -> None:
+        """Write ``data`` to its S3 key with ``replace=True``.
+
+        ``replace=True`` is mandatory: ``S3Hook.load_bytes`` defaults to
+        ``replace=False``, which would break both a re-run after a partial write
+        and ``overwrite``. The decision *whether* to write is made earlier from
+        the manifest, so the byte write never needs to hesitate.
+        """
+        self._s3_hook().load_bytes(
+            data, key=self._destination_path(rel_path), bucket_name=self.bucket, replace=True
+        )
+
+    def _destination_path(self, rel_path: str) -> str:
+        """The S3 object key of ``rel_path`` via the shared :func:`s3_object_key`."""
+        from airflow_provider_gmail.utils.paths import s3_object_key
+
+        dt_dir, filename = rel_path.rsplit("/", 1)
+        dt, message_id = self._split_rel_dir(dt_dir)
+        return s3_object_key(self.prefix, dt, message_id, filename)
+
+    def _read_manifest(self, rel_dir: str) -> Manifest | None:
+        """Read + parse the manifest under ``rel_dir``, or ``None`` when absent.
+
+        Uses the shared :func:`manifest_key` join (so operator and sensor agree on
+        where the manifest lives) with ``check_for_key`` + ``read_key``.
+        ``S3Hook.read_key`` returns ``str`` (decoded), which
+        :meth:`Manifest.from_json` accepts; validation / ``ManifestError`` live in
+        the manifest module, not here.
+        """
+        from airflow_provider_gmail.utils.paths import manifest_key
+
+        dt, message_id = self._split_rel_dir(rel_dir)
+        key = manifest_key(self.prefix, dt, message_id)
+        hook = self._s3_hook()
+        if not hook.check_for_key(key, bucket_name=self.bucket):
+            return None
+        return Manifest.from_json(hook.read_key(key, bucket_name=self.bucket))
+
+    def _filter_processed_label(self) -> bool:
+        """Never filter the S3 search by label (ADR-0001) — correctness is the manifest."""
+        return False

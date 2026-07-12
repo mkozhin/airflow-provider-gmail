@@ -1087,21 +1087,21 @@ return delivered                                # → XCom: только пис�
 - Create: `tests/test_operator_s3.py`
 - Create: `tests/test_paths.py`
 
-- [ ] наследник с `aws_conn_id`, `bucket`, `prefix`, `overwrite: bool = False`;
+- [x] наследник с `aws_conn_id`, `bucket`, `prefix`, `overwrite: bool = False`;
       `template_fields` дополняется `bucket` и `prefix`
-- [ ] **`S3Hook` импортировать лениво внутри методов** (`_write`/`_read_manifest`/
+- [x] **`S3Hook` импортировать лениво внутри методов** (`_write`/`_read_manifest`/
       `_destination_path`), а не top-level: S3- и local-операторы делят модуль
       `operators/gmail.py`, а `apache-airflow-providers-amazon` — опциональная зависимость
       (extra `s3`). Top-level `from airflow.providers.amazon...import S3Hook` сделал бы
       **весь модуль неимпортируемым** при установке без `[s3]` — упал бы и заявленный
       local-режим. То же правило — для S3-сенсора (Task 12)
-- [ ] `_write()` через `S3Hook.load_bytes(..., replace=True)` — **дефолт
+- [x] `_write()` через `S3Hook.load_bytes(..., replace=True)` — **дефолт
       `replace=False` ломает и перезапуск после частичной записи, и `overwrite`**
-- [ ] `_destination_path()` → `<prefix>/dt=.../<message_id>/<filename>` (ключ в бакете)
+- [x] `_destination_path()` → `<prefix>/dt=.../<message_id>/<filename>` (ключ в бакете)
       через **общую функцию `utils/paths.py:s3_object_key(...)`** (создаётся здесь, зовётся
       и сенсором Task 12): убрать ведущие/замыкающие `/`, схлопнуть двойные слэши; пустой
       `prefix` не должен давать ключ, начинающийся с `/`. Строку формата не дублировать
-- [ ] `_read_manifest(rel_dir) -> Manifest | None` через `S3Hook.check_for_key` +
+- [x] `_read_manifest(rel_dir) -> Manifest | None` через `S3Hook.check_for_key` +
       `read_key` на `manifest_key(...)` из `utils/paths.py` (тот же join): нет ключа
       → `None`, иначе тело → **`Manifest.from_json`** (валидация и `ManifestError` — внутри
       модуля, не здесь). Один лишний GET на письмо в окне.
@@ -1110,37 +1110,37 @@ return delivered                                # → XCom: только пис�
       `read_key` возвратом `str`, а не `bytes`, иначе мок скроет расхождение типов.
       Стоимость — `check_for_key` + (при наличии) `read_key` на письмо в окне: проверка
       существования плюс чтение, а не «один GET»
-- [ ] при `overwrite=True` проверка манифеста пропускается (`None` в `decide`, см. Task 8)
+- [x] при `overwrite=True` проверка манифеста пропускается (`None` в `decide`, см. Task 8)
       — иначе перекачка невозможна. `-label:` в S3 не участвует в запросе в принципе
       (`_filter_processed_label()==False`), так что отдельного «снятия метки при overwrite»
       здесь нет
-- [ ] docstring: работа с S3-совместимыми хранилищами (endpoint через `extra`
+- [x] docstring: работа с S3-совместимыми хранилищами (endpoint через `extra`
       у Amazon-подключения), а не только с AWS; вложение целиком грузится в память
-- [ ] **`_filter_processed_label()` переопределён на `False`** (ADR-0001): в S3 `-label:`
+- [x] **`_filter_processed_label()` переопределён на `False`** (ADR-0001): в S3 `-label:`
       в поиск не подмешивается ни при каком `mark_processed` — корректность держит манифест
-- [ ] написать тесты: манифест прошлого run_id → скачивания нет и вниз не идёт;
+- [x] написать тесты: манифест прошлого run_id → скачивания нет и вниз не идёт;
       манифест текущего run_id → вниз идёт, скачивания нет; `overwrite=True` →
       скачивание есть; **`mark_processed=True` → в запросе НЕТ `-label:`** (S3 никогда не
       фильтрует по метке); ключи собираются с ожидаемой структурой пути
-- [ ] **CRITICAL retry-delivery тесты (ADR-0001)**: (а) метка проставлена, задача упала
+- [x] **CRITICAL retry-delivery тесты (ADR-0001)**: (а) метка проставлена, задача упала
       до возврата → на retry письмо всё равно найдено (нет `-label:`), манифест текущего
       `run_id` → `DELIVER_ONLY` → путь в XCom; (б) частичный `batchModify` (первая пачка
       помечена, вторая упала) → retry доставляет манифесты **всех** писем текущего `run_id`,
       ни одно не потеряно; (в) без меток вовсе поведение то же — метка на доставку не влияет
-- [ ] написать тест: `load_bytes` вызван с `replace=True`
-- [ ] **тесты `utils/paths.py` в `tests/test_paths.py`**: нормализация `prefix` — `""`,
+- [x] написать тест: `load_bytes` вызван с `replace=True`
+- [x] **тесты `utils/paths.py` в `tests/test_paths.py`**: нормализация `prefix` — `""`,
       `"gmail/avito"`, `"gmail/avito/"` дают корректные ключи без ведущего и двойных слэшей;
       `s3_object_key` и `manifest_key` строят согласованные пути (манифест лежит рядом с
       файлами того же письма) — это тот же контракт ключа, что проверяет сенсор Task 12
-- [ ] написать failure-path тест: вложение уже лежит в S3, манифеста нет →
+- [x] написать failure-path тест: вложение уже лежит в S3, манифеста нет →
       повторный запуск перезаписывает файл и дописывает манифест, а не падает
-- [ ] тест: `_read_manifest` на существующем ключе делегирует в `Manifest.from_json`
+- [x] тест: `_read_manifest` на существующем ключе делегирует в `Manifest.from_json`
       и работает со `str`-телом от `read_key` (сам разбор битого манифеста и `ManifestError`
       покрыты в `test_manifest.py`, Task 7a)
-- [ ] **тест аварийного восстановления: битый манифест + `overwrite=True` → письмо
+- [x] **тест аварийного восстановления: битый манифест + `overwrite=True` → письмо
       перекачивается** (манифест не читается вовсе, `ManifestError` не поднимается), при
       этом `overwrite=False` на том же битом манифесте по-прежнему валит задачу `ManifestError`
-- [ ] запустить `pytest` — должен пройти до перехода к задаче 10
+- [x] запустить `pytest` — должен пройти до перехода к задаче 10
 
 ### Task 10: GmailAttachmentsToLocalOperator
 
