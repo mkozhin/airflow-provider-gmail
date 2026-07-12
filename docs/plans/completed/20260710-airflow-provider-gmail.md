@@ -1383,7 +1383,7 @@ return delivered                                # → XCom: только пис�
       (build+twine всё равно прогоняются); в CI сеть есть — идёт полный путь.
       Потребовало бампа dev-инструментов (`twine>=6`, `packaging>=24.2`): сборка через
       build-isolation тянет свежий setuptools и пишет Metadata-Version 2.4
-      (PEP 639 `license = "Apache-2.0"`), а старый `twine 5.0`/`pkginfo 1.10` его не понимал
+      (PEP 639 `license = "MIT"`), а старый `twine 5.0`/`pkginfo 1.10` его не понимал
 - [x] **явно прогнать `pytest -m packaging`** — из-за глобального `addopts = "-m 'not packaging'"`
       обычный «полный `pytest`» этот тест НЕ включает; отдельная команда обязательна.
       Прогнан: `pytest -m packaging tests/test_packaging.py` → 1 passed (build → twine check →

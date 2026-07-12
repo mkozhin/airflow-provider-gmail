@@ -2,6 +2,8 @@
 
 [English (this file)](README.md) · [Русский](README_RU.md)
 
+*Powered by [Claude Code](https://claude.ai/code)*
+
 An Apache Airflow provider that finds emails in Gmail by a set of conditions,
 picks the attachments you want out of them, and drops the bytes into an
 S3-compatible object store or onto a local disk. It targets **Airflow 2.9.1**

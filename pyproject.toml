@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "airflow-provider-gmail"
 dynamic = ["version"]
-description = "Apache Airflow provider that finds Gmail messages by criteria and stores their attachments in S3-compatible storage or on local disk"
+description = "Apache Airflow provider for Gmail — find messages by criteria and store their attachments in S3-compatible storage or on local disk"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "Apache-2.0"
+license = "MIT"
 authors = [
-    {name = "mkozhin", email = "cyril.grapes@gmail.com"},
+    {name = "Michael Kozhin", email = "michael@kozhin.cc"},
 ]
 keywords = ["airflow", "gmail", "provider", "attachments", "s3"]
 classifiers = [
@@ -52,6 +52,7 @@ packaging = [
 
 [project.urls]
 Homepage = "https://github.com/mkozhin/airflow-provider-gmail"
+Documentation = "https://github.com/mkozhin/airflow-provider-gmail#readme"
 Repository = "https://github.com/mkozhin/airflow-provider-gmail"
 Changelog = "https://github.com/mkozhin/airflow-provider-gmail/blob/main/CHANGELOG.md"
 Issues = "https://github.com/mkozhin/airflow-provider-gmail/issues"
