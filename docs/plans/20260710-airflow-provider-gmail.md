@@ -734,32 +734,32 @@ return delivered                                # → XCom: только пис�
 - Create: `src/airflow_provider_gmail/hooks/gmail.py`
 - Create: `tests/test_hook_auth.py`
 
-- [ ] класс `GmailHook(BaseHook)` с `conn_name_attr`, `default_conn_name="gmail_default"`,
+- [x] класс `GmailHook(BaseHook)` с `conn_name_attr`, `default_conn_name="gmail_default"`,
       `conn_type="gmail"`, `hook_name="Gmail"`
-- [ ] добавить в `get_provider_info()` секцию `connection-types` (`connection-type: gmail`,
+- [x] добавить в `get_provider_info()` секцию `connection-types` (`connection-type: gmail`,
       `hook-class-name` → `GmailHook`) — теперь класс существует; проверить, что
       `ProvidersManager()` реально загружает hook, а не только строковый ключ
-- [ ] `get_conn()` — построить `Credentials` из `login`/`password`/`extra.refresh_token`,
+- [x] `get_conn()` — построить `Credentials` из `login`/`password`/`extra.refresh_token`,
       выполнить `creds.refresh(Request())`, собрать `build("gmail", "v1", credentials=creds)`;
       закешировать service на время жизни хука
-- [ ] `self.user_id` из `extra.user_id`, дефолт `"me"` — **обязательный `userId`
+- [x] `self.user_id` из `extra.user_id`, дефолт `"me"` — **обязательный `userId`
       для каждого вызова Gmail API**, передаётся во все методы хука
-- [ ] `access_token` нигде не сохраняется; в Connection ничего не записывается
-- [ ] обернуть `google.auth.exceptions.RefreshError` во внятное исключение:
+- [x] `access_token` нигде не сохраняется; в Connection ничего не записывается
+- [x] обернуть `google.auth.exceptions.RefreshError` во внятное исключение:
       токен отозван/истёк, проверьте статус OAuth-приложения (в режиме «Testing»
       `refresh_token` живёт 7 дней) и перевыпустите его
-- [ ] `get_connection_form_widgets()` и `get_ui_field_behaviour()` — поля
+- [x] `get_connection_form_widgets()` и `get_ui_field_behaviour()` — поля
       `refresh_token`, `user_id`, `scopes` (последнее — справочное, на права не влияет);
       переименовать `login`/`password` в `Client ID` / `Client Secret`,
       скрыть `host`/`port`/`schema`. **`refresh_token` — password-виджет**
       (`wtforms.PasswordField` / `BS3PasswordFieldWidget`): токен долгоживущий и
       секретный, открытым текстом в форме показывать нельзя
-- [ ] написать тесты: `Credentials` собирается из Connection корректно; `refresh`
+- [x] написать тесты: `Credentials` собирается из Connection корректно; `refresh`
       вызывается ровно один раз при повторном `get_conn()`; отсутствие `refresh_token`
       в `extra` даёт внятное исключение; `RefreshError` превращается в своё исключение
       с подсказкой; `user_id` берётся из `extra`, при отсутствии — `"me"`;
       форма скрывает `refresh_token` (password-виджет) и правильно переименовывает поля
-- [ ] запустить `pytest` — должен пройти до перехода к задаче 4
+- [x] запустить `pytest` — должен пройти до перехода к задаче 4
 
 ### Task 4: GmailHook — сборка поискового запроса
 

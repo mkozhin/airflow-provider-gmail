@@ -19,9 +19,9 @@ def get_provider_info() -> dict:
     ``versions`` is derived from the setuptools-scm generated ``__version__`` so
     it never drifts away from the wheel/tag version.
 
-    ``connection-types`` is intentionally absent here: it is added in Task 3
-    together with ``GmailHook``. Adding a ``hook-class-name`` that points at a
-    class that does not yet exist makes ``ProvidersManager`` fail to load.
+    ``connection-types`` registers ``GmailHook`` so the Gmail connection type
+    appears in the Airflow UI. The ``hook-class-name`` must point at a class that
+    actually imports, or ``ProvidersManager`` fails to load the provider.
     """
     return {
         "package-name": "airflow-provider-gmail",
@@ -31,4 +31,10 @@ def get_provider_info() -> dict:
             "S3-compatible storage or on local disk."
         ),
         "versions": [__version__],
+        "connection-types": [
+            {
+                "connection-type": "gmail",
+                "hook-class-name": "airflow_provider_gmail.hooks.gmail.GmailHook",
+            }
+        ],
     }

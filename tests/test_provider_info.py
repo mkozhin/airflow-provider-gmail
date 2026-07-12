@@ -20,7 +20,30 @@ def test_versions_match_package_version():
     assert info["versions"] == [airflow_provider_gmail.__version__]
 
 
-def test_connection_types_absent_until_hook_exists():
-    # GmailHook does not exist yet (Task 3). Registering connection-types now
-    # would make ProvidersManager fail to load the provider.
-    assert "connection-types" not in get_provider_info()
+def test_connection_types_registers_gmail_hook():
+    # Task 3: GmailHook exists, so connection-types is now present and points at it.
+    info = get_provider_info()
+    conn_types = info["connection-types"]
+    assert conn_types == [
+        {
+            "connection-type": "gmail",
+            "hook-class-name": "airflow_provider_gmail.hooks.gmail.GmailHook",
+        }
+    ]
+
+
+def test_providers_manager_loads_gmail_hook_class():
+    # Verify ProvidersManager actually imports the hook class, not just the
+    # string key: a broken hook-class-name would leave the class field empty.
+    from airflow.providers_manager import ProvidersManager
+
+    hooks = ProvidersManager().hooks
+    assert "gmail" in hooks, f"gmail not registered; have {sorted(hooks)}"
+    info = hooks["gmail"]
+    # A non-None HookInfo means ProvidersManager imported the class successfully
+    # (a broken hook-class-name logs a warning and leaves this None). hook_name
+    # is read off the imported class, proving the real class loaded.
+    assert info is not None, "gmail hook failed to import in ProvidersManager"
+    assert info.connection_type == "gmail"
+    assert info.hook_class_name == "airflow_provider_gmail.hooks.gmail.GmailHook"
+    assert info.hook_name == "Gmail"
