@@ -915,7 +915,7 @@ return delivered                                # → XCom: только пис�
 Самодостаточный чистый модуль (без Airflow/S3/Gmail — см. `CONTEXT.md`), ложится
 **зелёным до** базового оператора: всё нижестоящее зависит от него.
 
-- [ ] **модуль `manifest.py`**:
+- [x] **модуль `manifest.py`**:
       - `FileEntry(name, size, path)` — плоский dataclass, элемент `files`
       - `Manifest(source, message_id, internal_date, subject, from_, run_id, files)` +
         `build(source, message_id, internal_date_iso, subject, from_, files, run_id)`
@@ -937,7 +937,7 @@ return delivered                                # → XCom: только пис�
       - `Decision.{DOWNLOAD_AND_DELIVER, DELIVER_ONLY, SKIP}` + свободная
         `decide(manifest: Manifest | None, run_id, overwrite) -> Decision` — вся семантика
         ADR-0001 + `overwrite` в одном месте; догон метки ортогонален (не в `Decision`)
-- [ ] **тесты `manifest.py` в `tests/test_manifest.py`** (чистые, без оператора):
+- [x] **тесты `manifest.py` в `tests/test_manifest.py`** (чистые, без оператора):
       - схема: `to_json`/`from_json` roundtrip, обязательные ключи (включая `run_id`),
         кириллические `subject`/`from`, совпадение со схемой-контрактом слоя 2
       - `from_json` → `ManifestError` на: битом JSON; JSON-массиве вместо объекта;
@@ -947,7 +947,7 @@ return delivered                                # → XCom: только пис�
       - `from_json` принимает и `str`, и `bytes` (эквивалентный результат)
       - `decide` таблицей: `None → DOWNLOAD_AND_DELIVER`; текущий `run_id → DELIVER_ONLY`;
         прошлый `run_id → SKIP`; `overwrite` × каждый → `DOWNLOAD_AND_DELIVER`
-- [ ] запустить `pytest` — должен пройти до перехода к задаче 7b
+- [x] запустить `pytest` — должен пройти до перехода к задаче 7b
 
 ### Task 7b: GmailAttachmentsBaseOperator — интерфейс и утилиты
 
