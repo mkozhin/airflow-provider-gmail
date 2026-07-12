@@ -955,50 +955,50 @@ return delivered                                # → XCom: только пис�
 - Create: `src/airflow_provider_gmail/operators/gmail.py`
 - Create: `tests/test_operator_base.py`
 
-- [ ] абстрактный класс с общими параметрами: `gmail_conn_id`, `source`, `query`,
+- [x] абстрактный класс с общими параметрами: `gmail_conn_id`, `source`, `query`,
       `from_email`, `subject_contains`, `has_attachment=False`, `filename_contains`,
       `attachment_pattern`, `lookback_days=7`, `mark_processed=False`,
       `label_suffix=None`, `timezone="Europe/Moscow"`, `overwrite=False`,
       `date_from=None`, `date_to=None` (в базовом классе, чтобы `execute()` мог
       ссылаться единообразно). Дефолт `lookback_days=7` — базовый; локальный оператор
       переопределяет его на `0` (Task 10, ADR-0001)
-- [ ] валидация в `__init__`: `lookback_days >= 0` (0 — легально, «только сегодня»);
+- [x] валидация в `__init__`: `lookback_days >= 0` (0 — легально, «только сегодня»);
       `timezone` резолвится через `ZoneInfo`; `attachment_pattern` компилируется
       через `re.compile` (кривая регулярка → ошибка на разборе DAG, а не в рантайме)
-- [ ] `date_from`/`date_to` — **templated** (заполняются из `dag_run.conf`), поэтому
+- [x] `date_from`/`date_to` — **templated** (заполняются из `dag_run.conf`), поэтому
       строка парсится в дату и валидируется (`date_from ≤ date_to`) **в `execute()`
       после рендера** (Task 8), а не в `__init__` (ADR-0004). Обратный выбор к
       `attachment_pattern`: диапазон — по своей природе runtime-значение
-- [ ] `parse_date_range(date_from, date_to) -> (date | None, date | None)` — модульная
+- [x] `parse_date_range(date_from, date_to) -> (date | None, date | None)` — модульная
       функция парсинга/валидации ISO-строк диапазона (`date_from ≤ date_to`),
       **переиспользуемая и `execute()` (Task 8), и сенсором `poke()` (Task 11)** — чтобы
       парс не разъехался между оператором и сенсором (как общие `Window`/`build_query`)
-- [ ] `template_fields` — как минимум `query`, `source`, `from_email`,
+- [x] `template_fields` — как минимум `query`, `source`, `from_email`,
       `subject_contains`, `filename_contains`, `date_from`, `date_to`;
       **`attachment_pattern` сюда НЕ входит** (ADR-0005: компилируется в `__init__`,
       templating подсунул бы сырой шаблон в `re.compile`); наследники дополняют своими
       (`prefix`/`path`/`bucket`)
-- [ ] три абстрактных метода: `_write(rel_path, data)`, `_destination_path(rel_path)`,
+- [x] три абстрактных метода: `_write(rel_path, data)`, `_destination_path(rel_path)`,
       `_read_manifest(rel_dir) -> Manifest | None` — **все принимают одну строку**;
       `rel_dir` вида `dt=YYYY-MM-DD/<message_id>` собирает базовый класс, наследник
       его не строит. `_read_manifest` читает байты и парсит через `Manifest.from_json`
       (S3), либо всегда `None` (local) — возвращает **весь `Manifest`**, не голый `run_id`
       (ADR-0006: шов остаётся наследованием, порт `Destination` не вводим)
-- [ ] `_filter_processed_label() -> bool` — **политика фильтра `-label:` в поиске**,
+- [x] `_filter_processed_label() -> bool` — **политика фильтра `-label:` в поиске**,
       переопределяется наследниками (ADR-0001): **S3 → всегда `False`** (метка не
       фильтрует поиск, иначе retry теряет доставку — см. Дедупликация), **local →
       `self.mark_processed`** (опт-ин дедуп широкого окна). `execute()` прокидывает
       результат в `hook.build_query(...)`. `overwrite` на строку запроса больше не влияет
-- [ ] `resolve_collisions(attachments)`: санитизация имени через `sanitize_filename`
+- [x] `resolve_collisions(attachments)`: санитизация имени через `sanitize_filename`
       и разрешение коллизий внутри письма суффиксом (`report.xlsx` → `report_1.xlsx`).
       **Инкремент до первого свободного имени с проверкой множества уже занятых**, а не
       слепое `_1`: письмо с `report.xlsx`, `report.xlsx`, `report_1.xlsx` иначе даст
       столкновение второго с реальным третьим. Возвращает пары `(attachment, safe_name)`
       — `Attachment` не мутируется, поля `safe_name` в нём нет (см. Task 2)
-- [ ] базовый класс собирает `Manifest.build(...)` (из `manifest.py`, Task 7a) и пишет
+- [x] базовый класс собирает `Manifest.build(...)` (из `manifest.py`, Task 7a) и пишет
       `manifest.to_json()` через `_write`; `subject`/`from` — из `MessageWithAttachments`
       (декодированы хуком), `run_id` — из `context["run_id"]`
-- [ ] **два хелпера конверсии** (оба используются в псевдокоде `execute()`), поверх
+- [x] **два хелпера конверсии** (оба используются в псевдокоде `execute()`), поверх
       **одной** внутренней функции epoch→aware-datetime, чтобы дата пути и ISO манифеста
       не разъехались:
       - `to_local_date(internal_date, timezone) -> date` — для партиции `dt=` (стр. 405)
@@ -1006,21 +1006,21 @@ return delivered                                # → XCom: только пис�
         `internal_date` манифеста (стр. 435)
       `internalDate` приходит строкой (epoch ms) → `int`, /1000; зона всегда из параметра
       `timezone`, никакого захардкоженного МСК
-- [ ] написать тест: `to_local_iso` даёт ISO 8601 со смещением зоны оператора
+- [x] написать тест: `to_local_iso` даёт ISO 8601 со смещением зоны оператора
       (`+03:00` для МСК); `to_local_date` и `to_local_iso` для одного `internal_date`
       согласованы (дата ISO совпадает с датой партиции)
-- [ ] написать тест: `to_local_date` для письма, пришедшего в 01:30 МСК, даёт текущий
+- [x] написать тест: `to_local_date` для письма, пришедшего в 01:30 МСК, даёт текущий
       день, а не вчерашний; зона берётся из параметра
-- [ ] написать тест: `resolve_collisions` — два `report.xlsx` → `report.xlsx` и
+- [x] написать тест: `resolve_collisions` — два `report.xlsx` → `report.xlsx` и
       `report_1.xlsx`; **`report.xlsx`, `report.xlsx`, `report_1.xlsx` → три разных имени
       без столкновения** (проверка учёта занятых имён); враждебное `../../evil.xlsx` →
       безопасный basename
-- [ ] написать тест: `parse_date_range` — валидный диапазон; только `date_from`; только
+- [x] написать тест: `parse_date_range` — валидный диапазон; только `date_from`; только
       `date_to`; неверный ISO → ошибка; обратный `date_from > date_to` → ошибка
-- [ ] написать тест: `template_fields` содержит ожидаемый набор
-- [ ] написать тест на валидацию: `lookback_days=-1`, неизвестная `timezone`,
+- [x] написать тест: `template_fields` содержит ожидаемый набор
+- [x] написать тест на валидацию: `lookback_days=-1`, неизвестная `timezone`,
       кривая `attachment_pattern` → ошибка в `__init__`
-- [ ] запустить `pytest` — должен пройти до перехода к задаче 8
+- [x] запустить `pytest` — должен пройти до перехода к задаче 8
 
 ### Task 8: GmailAttachmentsBaseOperator — оркестрация execute() и дедуп по run_id
 
