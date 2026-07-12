@@ -1393,14 +1393,21 @@ return delivered                                # → XCom: только пис�
 **Files:**
 - Create: `.github/workflows/publish.yml`
 
-- [ ] `publish.yml`: сборка и публикация на PyPI по тегу, версия из `setuptools-scm`.
+- [x] `publish.yml`: сборка и публикация на PyPI по тегу, версия из `setuptools-scm`.
       **Механизм аутентификации зафиксирован — PyPI Trusted Publishing** (OIDC):
       `permissions: id-token: write`, защищённый GitHub environment, публикация через
       `pypa/gh-action-pypi-publish` (без хранения `PYPI_API_TOKEN` в secrets). Триггер —
-      пуш тега версии; сборка `python -m build`, затем действие публикации
-- [ ] запустить полный `pytest` локально + `pytest -m packaging` — весь набор проходит
+      пуш тега версии (`tags: ['v*']`); `build`-job делает checkout с `fetch-depth: 0`
+      (иначе setuptools-scm не резолвит тег), ставит **unconstrained** актуальный
+      `build`/`twine>=6`/`packaging>=24.2` (без Airflow-constraints — иначе `packaging==24.0`
+      сломал бы `twine check` PEP 639 Metadata 2.4), собирает `python -m build`, гоняет
+      `twine check dist/*` и заливает артефакт; `publish`-job (protected env `pypi`,
+      `id-token: write`) публикует через `pypa/gh-action-pypi-publish`. YAML валиден
+      (`yaml.safe_load` через venv)
+- [x] запустить полный `pytest` локально + `pytest -m packaging` — весь набор проходит
       (визуальную проверку вкладки Providers в UI см. в Post-Completion — она требует
-      запущенного webserver и в CI не воспроизводится)
+      запущенного webserver и в CI не воспроизводится). Прогнано: `pytest` → 229 passed,
+      1 deselected; `pytest -m packaging` **ран** (сеть доступна) → 1 passed, 229 deselected
 
 ### Task 16: [Final] Приёмка, сверка README и перенос плана (acceptance gate)
 
