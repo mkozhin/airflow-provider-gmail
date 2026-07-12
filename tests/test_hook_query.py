@@ -24,8 +24,6 @@ def _q(
     hook: GmailHook,
     window: Window = NO_BOUNDS,
     *,
-    filter_processed_label: bool = False,
-    label_name: str | None = None,
     from_email: str | None = None,
     subject_contains: str | None = None,
     has_attachment: bool = False,
@@ -34,8 +32,6 @@ def _q(
 ) -> str:
     return hook.build_query(
         window,
-        filter_processed_label,
-        label_name,
         from_email,
         subject_contains,
         has_attachment,
@@ -155,28 +151,24 @@ def test_has_attachment_false_adds_nothing():
     assert "-has:attachment" not in q
 
 
-# --- -label: filter ------------------------------------------------------------
+# --- processed-label dedup is NOT a query term ---------------------------------
 
 
-def test_filter_processed_label_true_adds_label_term():
+def test_build_query_never_emits_label_term():
+    # The processed-label dedup moved out of the query (it is a labelIds
+    # comparison in code — see find_messages_with_attachments's exclude_label_id).
+    # build_query has no label parameters and can never emit a -label: term, for
+    # any combination of fields or window bounds.
     q = _q(
         _hook(),
+        Window(after=1000, before=2000),
         from_email="x@y.z",
-        filter_processed_label=True,
-        label_name="airflow/processed/avito",
+        subject_contains="Отчёт",
+        has_attachment=True,
+        filename_contains="report",
     )
-    assert q == 'from:x@y.z -label:"airflow/processed/avito"'
-
-
-def test_filter_processed_label_false_omits_label_term():
-    q = _q(
-        _hook(),
-        from_email="x@y.z",
-        filter_processed_label=False,
-        label_name="airflow/processed/avito",
-    )
-    assert q == "from:x@y.z"
     assert "-label:" not in q
+    assert "label:" not in q
 
 
 # --- window bounds embedded ----------------------------------------------------

@@ -154,12 +154,14 @@ class GmailAttachmentSensor(BaseSensorOperator):
         return GmailHook(self.gmail_conn_id)
 
     def _filter_processed_label(self) -> bool:
-        """Whether ``-label:`` is mixed into the search (pairs with the local operator).
+        """Whether processed messages are filtered out by their label id.
 
         Returns :attr:`mark_processed`: the base sensor dedups via the Gmail
-        label, exactly like :class:`GmailAttachmentsToLocalOperator`.
-        :class:`GmailAttachmentToS3Sensor` overrides this to ``False`` (it dedups
-        by manifest, never by the label — ADR-0001).
+        label (a ``labelIds`` comparison in code — :meth:`GmailHook.find_label_id`
+        + ``exclude_label_id``, never a ``-label:`` query term), exactly like
+        :class:`GmailAttachmentsToLocalOperator`. :class:`GmailAttachmentToS3Sensor`
+        overrides this to ``False`` (it dedups by manifest, never by the label —
+        ADR-0001).
         """
         return self.mark_processed
 
@@ -198,16 +200,24 @@ class GmailAttachmentSensor(BaseSensorOperator):
         )
         query = self.hook.build_query(
             window,
-            self._filter_processed_label(),
-            label_name,
             self.from_email,
             self.subject_contains,
             self.has_attachment,
             self.filename_contains,
             self.query,
         )
+        # Processed-label dedup is applied in code over each message's labelIds,
+        # not via -label: in the query (ADR-0001). Resolve the id only under the
+        # subclass policy (S3 -> None; base sensor -> when mark_processed).
+        exclude_label_id = (
+            self.hook.find_label_id(label_name)
+            if self._filter_processed_label()
+            else None
+        )
         return list(
-            self.hook.find_messages_with_attachments(query, self._compiled_pattern)
+            self.hook.find_messages_with_attachments(
+                query, self._compiled_pattern, exclude_label_id
+            )
         )
 
     def poke(self, context: Any) -> bool:
@@ -228,8 +238,9 @@ class GmailAttachmentToS3Sensor(GmailAttachmentSensor):
     firing while the operator behind it honestly skips; this one does not.
 
     "Processed" is decided by the manifest, never by a Gmail label:
-    :meth:`_filter_processed_label` is ``False`` so ``-label:`` is not mixed into
-    the search (symmetric with the S3 operator — ADR-0001). Each candidate's
+    :meth:`_filter_processed_label` is ``False`` so processed messages are not
+    filtered out by their label id (symmetric with the S3 operator — ADR-0001).
+    Each candidate's
     manifest is looked up at the **same** key the operator writes (the shared
     :func:`~airflow_provider_gmail.utils.paths.manifest_key`), so sensor and
     operator can never disagree on where a message's manifest lives.

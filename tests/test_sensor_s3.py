@@ -54,24 +54,20 @@ class FakeGmailHook:
         self._messages = list(messages)
         self._real = GmailHook("unused")
         self.built_query = None
-        self.filter_processed_label = None
+        self.exclude_label_id = "<unset>"
+        self.find_label_id_calls: list[str] = []
 
     def build_query(
         self,
         window,
-        filter_processed_label,
-        label_name,
         from_email,
         subject_contains,
         has_attachment,
         filename_contains,
         raw_query,
     ) -> str:
-        self.filter_processed_label = filter_processed_label
         self.built_query = self._real.build_query(
             window,
-            filter_processed_label,
-            label_name,
             from_email,
             subject_contains,
             has_attachment,
@@ -80,7 +76,14 @@ class FakeGmailHook:
         )
         return self.built_query
 
-    def find_messages_with_attachments(self, query, pattern):
+    def find_label_id(self, name):
+        # The S3 policy is False, so poke() must never call this. Record any call
+        # so a regression (the S3 sensor resolving a processed label) is caught.
+        self.find_label_id_calls.append(name)
+        return "Label_should_not_be_used"
+
+    def find_messages_with_attachments(self, query, pattern, exclude_label_id=None):
+        self.exclude_label_id = exclude_label_id
         return list(self._messages)
 
 
@@ -302,11 +305,14 @@ def test_manifest_key_matches_operator_destination_path():
 
 
 def test_poke_does_not_filter_search_by_label():
-    # mark_processed=True must not mix -label: into the S3 sensor's query.
+    # The S3 sensor never filters out processed messages by their label (policy
+    # False, ADR-0001): it must not resolve a label id, must pass exclude_label_id
+    # None, and its query carries no -label: term.
     store: dict = {}
     msg = _message("msg1", "a.xlsx")
     sensor = _make_sensor(store, mark_processed=True)
     hook = FakeGmailHook([msg])
     _poke(sensor, hook)
-    assert hook.filter_processed_label is False
+    assert hook.find_label_id_calls == []
+    assert hook.exclude_label_id is None
     assert "-label:" not in hook.built_query

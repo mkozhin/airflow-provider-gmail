@@ -207,17 +207,18 @@ and `aws_conn_id` (default `"aws_default"`).
 - **Labels need `gmail.modify` + a token re-issue.** You cannot widen the scope of
   an existing `refresh_token`; re-issue it through the OAuth consent with
   `gmail.modify` granted.
-- **In S3 mode `-label:` is NOT used as a search filter** (ADR-0001). Attaching the
-  label (`batchModify`) and pushing the return-XCom are not atomic: if the label
-  were already set and the task died before returning, a search with `-label:`
-  would not find the message, its current-`run_id` manifest would never reach the
-  dedup decision, and a fully downloaded email would vanish silently on a green
-  retry. So in S3 correctness rests on the manifest + `run_id` **alone**;
+- **In S3 mode the label is NOT used to filter out processed messages** (ADR-0001).
+  Attaching the label (`batchModify`) and pushing the return-XCom are not atomic: if
+  the label were already set and the task died before returning, a label-filtered
+  search would not surface the message, its current-`run_id` manifest would never
+  reach the dedup decision, and a fully downloaded email would vanish silently on a
+  green retry. So in S3 correctness rests on the manifest + `run_id` **alone**;
   `mark_processed=True` may still *attach* a label as an external marker, but it
-  never filters the search. In **local** mode the label is an opt-in dedup for wide
-  windows (`mark_processed=True` mixes `-label:` into the search) — accepting the
-  honest caveat that a crash between labeling and delivery can "lose" a message on
-  retry, which is exactly why S3 never does this.
+  never filters processed messages out. In **local** mode the label is an opt-in
+  dedup for wide windows (`mark_processed=True` drops messages whose `labelIds`
+  already carry the processed label — a comparison done in code, not a `-label:`
+  query term) — accepting the honest caveat that a crash between labeling and
+  delivery can "lose" a message on retry, which is exactly why S3 never does this.
 - **`overwrite` is incompatible with `GmailAttachmentToS3Sensor`.** The
   storage-aware sensor discards messages that already have a manifest and would
   report "no work", so the operator behind it never runs. Drive overwrite
@@ -251,9 +252,11 @@ and `aws_conn_id` (default `"aws_default"`).
   non-empty `filename` and drops a part **only** if it is inline *and*
   `mime_type` starts with `image/`. Inline PDFs/xlsx are kept (a `Content-ID`
   does not demote them); `attachment_pattern` guards against extras.
-- **Nested labels are not hierarchical in search.** `label:airflow/processed` does
-  **not** match a message labeled only `airflow/processed/avito`. So `-label:` uses
-  the exact final string (always quoted) that is attached.
+- **Nested labels are not hierarchical.** `airflow/processed` does **not** cover a
+  message labeled only `airflow/processed/avito`. The processed-label dedup resolves
+  that exact final string to its `labelId` (`find_label_id`) and compares it against
+  each message's `labelIds` in code — so nesting never causes a false match, and no
+  `-label:` query term is involved.
 - **`attachmentId` is unstable** between requests — it is used immediately after
   `messages.get` and never stored.
 - **Filenames arrive already decoded.** Gmail returns `MessagePart.filename` as a

@@ -280,27 +280,27 @@
 - Modify: `tests/test_hook_query.py`
 - Modify: `tests/test_hook_search.py`
 
-- [ ] добавить `GmailHook.find_label_id(name) -> str | None`: `labels.list`,
+- [x] добавить `GmailHook.find_label_id(name) -> str | None`: `labels.list`,
   матч по полному имени, кэш в `self._label_ids`, `None` при отсутствии;
   **без** создания метки (не требует `gmail.modify`); `get_or_create_label`
   может переиспользовать lookup-часть; ⚠️ негативный результат НЕ кэшировать
   в `self._label_ids` — иначе последующий `get_or_create_label` того же имени
   пропустит создание
-- [ ] в `find_messages_with_attachments` добавить параметр
+- [x] в `find_messages_with_attachments` добавить параметр
   `exclude_label_id: str | None = None`: после `get_message` пропускать письмо
   при `exclude_label_id in (message.get("labelIds") or [])` с INFO-логом
   («processed label — skipped»)
-- [ ] из `build_query` удалить параметры `filter_processed_label`,
+- [x] из `build_query` удалить параметры `filter_processed_label`,
   `label_name` и терм `-label:` (hooks/gmail.py:220-284); обновить docstring;
   docstring `resolve_label_name` (38-51) — имя больше не идёт в запрос, только
   в `get_or_create_label`/`find_label_id`
-- [ ] write tests (labels): `find_label_id` — найдена/не найдена/кэш (второй
+- [x] write tests (labels): `find_label_id` — найдена/не найдена/кэш (второй
   вызов без `labels.list`)
-- [ ] write tests (search): письмо с `exclude_label_id` в `labelIds`
+- [x] write tests (search): письмо с `exclude_label_id` в `labelIds`
   пропускается; без — остаётся; `exclude_label_id=None` — фильтра нет
-- [ ] переписать тесты `test_hook_query.py` про `-label:` под новую сигнатуру
+- [x] переписать тесты `test_hook_query.py` про `-label:` под новую сигнатуру
   `build_query` (терма в запросе больше нет ни при каких аргументах)
-- [ ] run tests — must pass before task 7 (⚠️ тесты операторов/сенсоров
+- [x] run tests — must pass before task 7 (⚠️ тесты операторов/сенсоров
   ЗАВЕДОМО упадут до Task 7 — `FakeGmailHook.build_query` в
   `tests/test_sensor.py:47-67` и `tests/test_sensor_s3.py:59-74` зеркалит
   старую сигнатуру и даст `TypeError`; выполнить Task 7 немедленно следом,
@@ -321,31 +321,31 @@
   `tests/test_operator_s3.py`, `tests/test_sensor.py`,
   `tests/test_sensor_s3.py`
 
-- [ ] `execute()` (operators/gmail.py:297-332): вычислить
+- [x] `execute()` (operators/gmail.py:297-332): вычислить
   `exclude_label_id = self.hook.find_label_id(label_name) if self._filter_processed_label() else None`,
   убрать label-аргументы из вызова `build_query`, передать `exclude_label_id`
   в `find_messages_with_attachments`
-- [ ] `_find_messages` сенсора (sensors/gmail.py:166-211): та же проводка
-- [ ] обновить docstrings политики `_filter_processed_label` (база, S3, local,
+- [x] `_find_messages` сенсора (sensors/gmail.py:166-211): та же проводка
+- [x] обновить docstrings политики `_filter_processed_label` (база, S3, local,
   оба сенсора) и docstring класса local-оператора (пункт 2 «Limitations»,
   operators/gmail.py:541-551): «`-label:` в запросе» → «фильтр по ID метки»
-- [ ] обновить упоминания `-label:` в ADR-0001, ADR-0004, CONTEXT.md,
+- [x] обновить упоминания `-label:` в ADR-0001, ADR-0004, CONTEXT.md,
   README.md и README_RU.md (семантика та же — S3 никогда не фильтрует по
   метке, local — opt-in; меняется механизм)
-- [ ] обновить фейки под новую сигнатуру: `FakeGmailHook.build_query` в
+- [x] обновить фейки под новую сигнатуру: `FakeGmailHook.build_query` в
   `tests/test_sensor.py:47-67` и `tests/test_sensor_s3.py:59-74` (делегируют в
   реальный `build_query` со старыми аргументами)
-- [ ] переписать тесты старого механизма: `test_query_parity...`
+- [x] переписать тесты старого механизма: `test_query_parity...`
   (`tests/test_sensor.py:223-257`, ассертит `-label:"..." in built_query`) и
   `test_poke_does_not_filter_search_by_label`
   (`tests/test_sensor_s3.py:304`, ассертит `"-label:" not in built_query`) —
   паритет/политика теперь проверяются через `exclude_label_id`
-- [ ] write tests: local-оператор с `mark_processed=True` фильтрует письмо с
+- [x] write tests: local-оператор с `mark_processed=True` фильтрует письмо с
   меткой (мок `labels.list` + `labelIds` в письме) и не фильтрует при
   отсутствии метки в ящике (`find_label_id → None`); S3-оператор и
   S3-сенсор не вызывают `find_label_id` (политика `False`); базовый сенсор с
   `mark_processed=True` — фильтрует
-- [ ] run tests — must pass before task 8
+- [x] run tests — must pass before task 8
 
 ### Task 8: S3-сенсор — учитывать run_id квитанции (ADR-0001)
 

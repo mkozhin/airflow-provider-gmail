@@ -39,12 +39,14 @@ def resolve_label_name(suffix: str | None) -> str:
     """Return the full processed-label name — pure, no Gmail API involved.
 
     ``airflow/processed`` by default, ``airflow/processed/<suffix>`` when a
-    ``label_suffix`` is given. Declared here because :meth:`GmailHook.build_query`
-    needs it for the ``-label:`` term; turning the name into a ``labelId`` (and
-    creating the label) is a later task.
+    ``label_suffix`` is given. The name never goes into the search query: it is
+    only used by :meth:`GmailHook.get_or_create_label` (to mark messages) and by
+    :meth:`GmailHook.find_label_id` (to resolve the ``labelId`` the operator /
+    sensor filter processed messages by, in code, over ``labelIds``).
 
-    Nested Gmail labels are **not** hierarchical for search, so the exact string
-    resolved here is both what gets attached and what goes into ``-label:``.
+    Nested Gmail labels are **not** hierarchical, so the exact string resolved
+    here is both what gets attached and what is matched by name when resolving
+    its ``labelId``.
     """
     if suffix:
         return f"{_LABEL_BASE}/{suffix}"
@@ -233,8 +235,6 @@ class GmailHook(BaseHook):
     def build_query(
         self,
         window: Window,
-        filter_processed_label: bool,
-        label_name: str | None,
         from_email: str | None,
         subject_contains: str | None,
         has_attachment: bool,
@@ -256,11 +256,12 @@ class GmailHook(BaseHook):
         structured fields are ANDed together (space is Gmail's AND).
 
         ``has_attachment=True`` adds ``has:attachment``; ``False`` adds nothing
-        (``-has:attachment`` is never emitted). ``-label:"<label_name>"`` is
-        added **iff** ``filter_processed_label`` is ``True`` — the caller decides
-        that policy (ADR-0001: S3 always passes ``False`` so the label never
-        filters the search; local passes ``mark_processed``). The hook itself
-        does not look at ``mark_processed``/``overwrite``.
+        (``-has:attachment`` is never emitted). The processed-label dedup is
+        **not** part of the query: it is applied in code over each message's
+        ``labelIds`` (see :meth:`find_messages_with_attachments`'s
+        ``exclude_label_id``), because Gmail does not document ``-label:``
+        escaping for slashed names and a silent match failure would re-deliver
+        (ADR-0001). The hook itself does not look at ``mark_processed``/``overwrite``.
         """
         structured_given = any(
             [from_email, subject_contains, has_attachment, filename_contains]
@@ -290,9 +291,6 @@ class GmailHook(BaseHook):
         before = window.before_epoch()
         if before is not None:
             terms.append(f"before:{before}")
-
-        if filter_processed_label and label_name:
-            terms.append(f'-label:"{_escape(label_name)}"')
 
         return " ".join(terms)
 
@@ -389,7 +387,10 @@ class GmailHook(BaseHook):
         return _b64url_decode(attachment.data)
 
     def find_messages_with_attachments(
-        self, query: str, pattern: str | re.Pattern[str] | None
+        self,
+        query: str,
+        pattern: str | re.Pattern[str] | None,
+        exclude_label_id: str | None = None,
     ) -> list[MessageWithAttachments]:
         """Search, fetch, walk the MIME tree and keep the matching attachments.
 
@@ -404,10 +405,25 @@ class GmailHook(BaseHook):
         matched no attachment is logged at INFO with the real attachment
         filenames and the pattern, then dropped — a renamed report otherwise
         turns into a green task with no data.
+
+        ``exclude_label_id`` implements the processed-label dedup **in code**
+        (not via ``-label:`` in the query): when it is not ``None``, a message
+        whose ``labelIds`` already carries it is logged at INFO and skipped. The
+        caller resolves the id via :meth:`find_label_id` under its own policy
+        (ADR-0001: S3 never filters by label, local / the base sensor opt in via
+        ``mark_processed``). ``None`` disables the filter entirely.
         """
         results: list[MessageWithAttachments] = []
         for message_id in self.search(query):
             message = self.get_message(message_id)
+            if exclude_label_id is not None and exclude_label_id in (
+                message.get("labelIds") or []
+            ):
+                self.log.info(
+                    "Message %s already carries the processed label — skipped.",
+                    message_id,
+                )
+                continue
             payload = message.get("payload") or {}
             attachments = list(iter_attachments(payload))
             if pattern is None:
@@ -454,22 +470,22 @@ class GmailHook(BaseHook):
                 raise GmailPermissionError(_MODIFY_HINT) from exc
             raise
 
-    def get_or_create_label(self, name: str) -> str:
-        """Return the ``labelId`` for ``name``, creating the label if missing.
+    def find_label_id(self, name: str) -> str | None:
+        """Return the ``labelId`` for ``name``, or ``None`` — lookup only, no create.
 
         Lists ``users.labels`` and matches on the **full** name (slashes and
-        all — nested Gmail labels are flat strings, there is no parent field);
-        on a miss, ``labels.create`` makes it with the full name in one call
-        (``airflow/processed/avito`` is created directly even when neither
-        ``airflow`` nor ``airflow/processed`` exists yet). The result is cached
-        for the hook's lifetime, so a repeated call for the same name issues no
-        further ``labels.list``/``labels.create``.
+        all — nested Gmail labels are flat strings, there is no parent field).
+        Unlike :meth:`get_or_create_label` it **never creates** the label, so it
+        needs no ``gmail.modify`` scope: it is the read-only lookup the operator /
+        sensor use to resolve the processed-label id for the ``labelIds`` dedup
+        (:meth:`find_messages_with_attachments`), so an empty mailbox is not
+        seeded with a label on every poke.
 
-        Concurrency: two overlapping ``DagRun``s of the same export may both miss
-        the label and both create it, yielding two labels with the same name.
-        This is non-critical — both labels are functional and searching by name
-        still works — so no lock is introduced; ``max_active_runs=1`` on the DAG
-        avoids it entirely.
+        A **positive** hit is cached in :attr:`_label_ids` for the hook's
+        lifetime (a later :meth:`get_or_create_label` for the same name reuses
+        it). A **miss** is deliberately **not** cached: caching ``None`` would
+        make a subsequent :meth:`get_or_create_label` for the same name skip the
+        create and mis-report the label as absent forever.
         """
         cached = self._label_ids.get(name)
         if cached is not None:
@@ -483,7 +499,29 @@ class GmailHook(BaseHook):
                 label_id = label["id"]
                 self._label_ids[name] = label_id
                 return label_id
+        return None
 
+    def get_or_create_label(self, name: str) -> str:
+        """Return the ``labelId`` for ``name``, creating the label if missing.
+
+        Reuses :meth:`find_label_id` for the read-only lookup (list + full-name
+        match, positive-hit caching); on a miss, ``labels.create`` makes it with
+        the full name in one call (``airflow/processed/avito`` is created directly
+        even when neither ``airflow`` nor ``airflow/processed`` exists yet). The
+        result is cached for the hook's lifetime, so a repeated call for the same
+        name issues no further ``labels.list``/``labels.create``.
+
+        Concurrency: two overlapping ``DagRun``s of the same export may both miss
+        the label and both create it, yielding two labels with the same name.
+        This is non-critical — both labels are functional and searching by name
+        still works — so no lock is introduced; ``max_active_runs=1`` on the DAG
+        avoids it entirely.
+        """
+        found = self.find_label_id(name)
+        if found is not None:
+            return found
+
+        service = self.get_conn()
         request = (
             service.users()
             .labels()

@@ -230,7 +230,7 @@ class GmailAttachmentsBaseOperator(BaseOperator):
         raise NotImplementedError
 
     def _filter_processed_label(self) -> bool:
-        """Whether ``-label:`` is mixed into the search query (ADR-0001).
+        """Whether processed messages are filtered out by their label id (ADR-0001).
 
         Abstract on purpose so a subclass that forgets the policy fails loudly:
 
@@ -240,8 +240,12 @@ class GmailAttachmentsBaseOperator(BaseOperator):
         - **local → ``self.mark_processed``**: an opt-in dedup of a wide window,
           since local has no retry-delivery contract to break.
 
-        ``execute()`` forwards the result to ``hook.build_query(...)``;
-        ``overwrite`` no longer affects the query string.
+        When ``True``, ``execute()`` resolves the processed label to a ``labelId``
+        via :meth:`GmailHook.find_label_id` and passes it as
+        ``exclude_label_id`` to :meth:`find_messages_with_attachments`, which
+        drops any message already carrying that label — the dedup is a
+        ``labelIds`` comparison in code, never a ``-label:`` query term.
+        ``overwrite`` does not affect it.
         """
         raise NotImplementedError
 
@@ -315,8 +319,6 @@ class GmailAttachmentsBaseOperator(BaseOperator):
         )
         query = self.hook.build_query(
             window,
-            self._filter_processed_label(),
-            label_name,
             self.from_email,
             self.subject_contains,
             self.has_attachment,
@@ -324,10 +326,20 @@ class GmailAttachmentsBaseOperator(BaseOperator):
             self.query,
         )
 
+        # Processed-label dedup is applied in code over each message's labelIds,
+        # not via -label: in the query (ADR-0001). Resolve the id only under the
+        # subclass policy (S3 -> None; local -> when mark_processed); a lookup that
+        # finds no such label yields None and simply disables the filter.
+        exclude_label_id = (
+            self.hook.find_label_id(label_name)
+            if self._filter_processed_label()
+            else None
+        )
+
         delivered: list[str] = []
         to_label: list[str] = []
         for msg in self.hook.find_messages_with_attachments(
-            query, self._compiled_pattern
+            query, self._compiled_pattern, exclude_label_id
         ):
             dt = to_local_date(msg.internal_date, self.timezone)
             rel_dir = f"dt={dt}/{msg.message_id}"
@@ -543,11 +555,12 @@ class GmailAttachmentsToLocalOperator(GmailAttachmentsBaseOperator):
        time filter, not processing state; a message keeps matching every run until it
        falls out of the window. A smaller window only reduces the number of repeats,
        it does not eliminate them. With ``mark_processed=True`` and a wide window,
-       ``-label:`` is mixed into the search (see :meth:`_filter_processed_label`) as
-       an opt-in dedup; the honest caveat is that a crash between setting the label
-       and delivering downstream can, on retry, "lose" that message's delivery —
-       acceptable within local's already-documented non-idempotency, and exactly why
-       S3 (which has a retry-delivery contract) never uses ``-label:`` as a filter.
+       processed messages are filtered out by their label id (see
+       :meth:`_filter_processed_label`) as an opt-in dedup; the honest caveat is that
+       a crash between setting the label and delivering downstream can, on retry,
+       "lose" that message's delivery — acceptable within local's already-documented
+       non-idempotency, and exactly why S3 (which has a retry-delivery contract)
+       never filters by the label.
     3. **File cleanup is the DAG's job**, not the operator's. This operator never
        deletes anything; a downstream task (typically on ``all_done``) must remove
        the files, or the disk fills up.
@@ -610,9 +623,9 @@ class GmailAttachmentsToLocalOperator(GmailAttachmentsBaseOperator):
         """Return :attr:`mark_processed`: local's opt-in dedup of a wide window.
 
         Unlike S3, local has no retry-delivery contract for the label to break, so
-        mixing ``-label:`` into the search is allowed when ``mark_processed=True``.
-        Caveat (see the class docstring): a crash between setting the label and
-        delivering downstream can, on retry, lose that message's delivery — local
-        makes no retry-delivery guarantee.
+        filtering processed messages by their label id is allowed when
+        ``mark_processed=True``. Caveat (see the class docstring): a crash between
+        setting the label and delivering downstream can, on retry, lose that
+        message's delivery — local makes no retry-delivery guarantee.
         """
         return self.mark_processed

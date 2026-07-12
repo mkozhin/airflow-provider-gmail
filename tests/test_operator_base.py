@@ -345,17 +345,20 @@ class _FakeHook:
         self._messages = list(messages)
         self.mark_error = mark_error
         self.window = None
-        self.filter_processed_label = None
         self.built_query = None
         self.search_pattern = "<unset>"
+        self.exclude_label_id = "<unset>"
+        self.find_label_id_calls: list[str] = []
+        # Configurable: what find_label_id returns, and which message ids the
+        # (real) labelIds filter would drop when a non-None id is passed.
+        self.label_id_to_return: str | None = None
+        self.labelled_ids: set[str] = set()
         self.downloaded: list[tuple[str, str]] = []
         self.marked: list[tuple[list[str], str]] = []
 
     def build_query(
         self,
         window,
-        filter_processed_label,
-        label_name,
         from_email,
         subject_contains,
         has_attachment,
@@ -363,14 +366,22 @@ class _FakeHook:
         raw_query,
     ) -> str:
         self.window = window
-        self.filter_processed_label = filter_processed_label
-        self.label_name = label_name
         self.built_query = "QUERY"
         return "QUERY"
 
-    def find_messages_with_attachments(self, query, pattern):
+    def find_label_id(self, name):
+        self.find_label_id_calls.append(name)
+        return self.label_id_to_return
+
+    def find_messages_with_attachments(self, query, pattern, exclude_label_id=None):
         self.search_pattern = pattern
-        return list(self._messages)
+        self.exclude_label_id = exclude_label_id
+        results = []
+        for msg in self._messages:
+            if exclude_label_id is not None and msg.message_id in self.labelled_ids:
+                continue
+            results.append(msg)
+        return results
 
     def download_attachment(self, message_id, attachment) -> bytes:
         self.downloaded.append((message_id, attachment.filename))
@@ -702,3 +713,48 @@ def test_execute_window_stable_across_midnight_and_retry_delivers():
     # The current-run message is still found and delivered on retry, not lost.
     assert result == ["s3://bucket/dt=2026-07-12/msg1/_manifest.json"]
     assert hook2.downloaded == []  # already downloaded in attempt 1
+
+
+# -- processed-label dedup wiring (exclude_label_id) -------------------------
+
+
+def test_execute_filter_label_true_resolves_id_and_passes_it():
+    # _filter_processed_label() True → execute resolves the label to an id via
+    # find_label_id and forwards it as exclude_label_id (no -label: in the query).
+    op = _DictOperator(task_id="t", source="avito", filter_label=True)
+    hook = _FakeHook([_message("msg1", "a.xlsx")])
+    hook.label_id_to_return = "Label_proc"
+    _run(op, hook)
+    assert hook.find_label_id_calls == ["airflow/processed"]
+    assert hook.exclude_label_id == "Label_proc"
+
+
+def test_execute_filter_label_true_drops_labelled_message():
+    # With the id resolved and the message carrying the label, it is filtered out.
+    op = _DictOperator(task_id="t", source="avito", filter_label=True)
+    hook = _FakeHook([_message("msg1", "a.xlsx")])
+    hook.label_id_to_return = "Label_proc"
+    hook.labelled_ids = {"msg1"}
+    with pytest.raises(AirflowSkipException):  # the only message was dropped
+        _run(op, hook)
+    assert hook.downloaded == []
+
+
+def test_execute_filter_label_true_but_label_absent_does_not_filter():
+    # find_label_id → None (no such label in the mailbox) → exclude_label_id None,
+    # so nothing is filtered even though the policy is on.
+    op = _DictOperator(task_id="t", source="avito", filter_label=True)
+    hook = _FakeHook([_message("msg1", "a.xlsx")])
+    hook.label_id_to_return = None
+    result = _run(op, hook)
+    assert hook.find_label_id_calls == ["airflow/processed"]
+    assert hook.exclude_label_id is None
+    assert result == ["s3://bucket/dt=2026-07-12/msg1/_manifest.json"]
+
+
+def test_execute_filter_label_false_never_calls_find_label_id():
+    op = _DictOperator(task_id="t", source="avito", filter_label=False)
+    hook = _FakeHook([_message("msg1", "a.xlsx")])
+    _run(op, hook)
+    assert hook.find_label_id_calls == []
+    assert hook.exclude_label_id is None

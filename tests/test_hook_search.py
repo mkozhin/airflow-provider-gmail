@@ -328,6 +328,79 @@ def test_pattern_filters_attachments():
     assert [a.filename for a in results[0].attachments] == ["report.xlsx"]
 
 
+def _msg_with_labels(msg_id, labels, parts) -> dict:
+    message = _msg(msg_id, 1752000000000, "hello", "sender@example.com", parts)
+    message["labelIds"] = labels
+    return message
+
+
+def test_exclude_label_id_skips_message_carrying_the_label():
+    # A message whose labelIds already carry the processed label id is dropped.
+    rec = Recorder()
+    rec.list_responses = [{"messages": [{"id": "m1"}]}]
+    rec.get_responses = {
+        "m1": _msg_with_labels("m1", ["INBOX", "Label_proc"], [_att_part("a.pdf", "att_a")])
+    }
+    hook = _hook(rec)
+
+    results = hook.find_messages_with_attachments("q", None, exclude_label_id="Label_proc")
+    assert results == []
+
+
+def test_exclude_label_id_keeps_message_without_the_label():
+    # The same filter keeps a message whose labelIds do NOT carry the id.
+    rec = Recorder()
+    rec.list_responses = [{"messages": [{"id": "m1"}]}]
+    rec.get_responses = {
+        "m1": _msg_with_labels("m1", ["INBOX"], [_att_part("a.pdf", "att_a")])
+    }
+    hook = _hook(rec)
+
+    results = hook.find_messages_with_attachments("q", None, exclude_label_id="Label_proc")
+    assert [m.message_id for m in results] == ["m1"]
+
+
+def test_exclude_label_id_none_disables_the_filter():
+    # exclude_label_id=None (the default): even a labelled message passes through.
+    rec = Recorder()
+    rec.list_responses = [{"messages": [{"id": "m1"}]}]
+    rec.get_responses = {
+        "m1": _msg_with_labels("m1", ["INBOX", "Label_proc"], [_att_part("a.pdf", "att_a")])
+    }
+    hook = _hook(rec)
+
+    results = hook.find_messages_with_attachments("q", None)
+    assert [m.message_id for m in results] == ["m1"]
+
+
+def test_exclude_label_id_handles_message_without_labelids_key():
+    # A message dict with no labelIds key at all must be kept (not crash).
+    rec = Recorder()
+    rec.list_responses = [{"messages": [{"id": "m1"}]}]
+    rec.get_responses = {
+        "m1": _msg("m1", 1752000000000, "hi", "s@example.com", [_att_part("a.pdf", "att_a")])
+    }
+    hook = _hook(rec)
+
+    results = hook.find_messages_with_attachments("q", None, exclude_label_id="Label_proc")
+    assert [m.message_id for m in results] == ["m1"]
+
+
+def test_exclude_label_id_skip_is_logged_at_info(caplog):
+    rec = Recorder()
+    rec.list_responses = [{"messages": [{"id": "m1"}]}]
+    rec.get_responses = {
+        "m1": _msg_with_labels("m1", ["Label_proc"], [_att_part("a.pdf", "att_a")])
+    }
+    hook = _hook(rec)
+
+    with caplog.at_level(logging.INFO):
+        results = hook.find_messages_with_attachments("q", None, exclude_label_id="Label_proc")
+    assert results == []
+    assert "processed label" in caplog.text
+    assert "m1" in caplog.text
+
+
 def test_body_data_attachment_without_attachment_id():
     rec = Recorder()
     rec.list_responses = [{"messages": [{"id": "bodydata01"}]}]

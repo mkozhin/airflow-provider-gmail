@@ -38,16 +38,17 @@ class FakeGmailHook:
         self._messages = list(messages)
         self._real = GmailHook("unused")
         self.window = None
-        self.filter_processed_label = None
         self.built_query = None
+        self.exclude_label_id = "<unset>"
+        self.find_label_id_calls: list[str] = []
+        self.label_id_to_return: str | None = None
+        self.labelled_ids: set[str] = set()
         self.downloaded: list[tuple[str, str]] = []
         self.marked: list[tuple[list[str], str]] = []
 
     def build_query(
         self,
         window,
-        filter_processed_label,
-        label_name,
         from_email,
         subject_contains,
         has_attachment,
@@ -55,11 +56,8 @@ class FakeGmailHook:
         raw_query,
     ) -> str:
         self.window = window
-        self.filter_processed_label = filter_processed_label
         self.built_query = self._real.build_query(
             window,
-            filter_processed_label,
-            label_name,
             from_email,
             subject_contains,
             has_attachment,
@@ -68,8 +66,18 @@ class FakeGmailHook:
         )
         return self.built_query
 
-    def find_messages_with_attachments(self, query, pattern):
-        return list(self._messages)
+    def find_label_id(self, name):
+        self.find_label_id_calls.append(name)
+        return self.label_id_to_return
+
+    def find_messages_with_attachments(self, query, pattern, exclude_label_id=None):
+        self.exclude_label_id = exclude_label_id
+        results = []
+        for msg in self._messages:
+            if exclude_label_id is not None and msg.message_id in self.labelled_ids:
+                continue
+            results.append(msg)
+        return results
 
     def download_attachment(self, message_id, attachment) -> bytes:
         self.downloaded.append((message_id, attachment.filename))
@@ -167,6 +175,52 @@ def test_read_manifest_always_none(tmp_path):
 def test_filter_processed_label_follows_mark_processed(tmp_path):
     assert _make_op(tmp_path, mark_processed=False)._filter_processed_label() is False
     assert _make_op(tmp_path, mark_processed=True)._filter_processed_label() is True
+
+
+# -- processed-label dedup (labelIds filter, not -label:) --------------------
+
+
+def test_mark_processed_true_filters_labelled_message(tmp_path):
+    # mark_processed=True → execute resolves the processed label id and drops a
+    # message already carrying it (labelIds filter in code, no -label: term).
+    from airflow.exceptions import AirflowSkipException
+
+    msg = _message("msg1", "report.xlsx")
+    op = _make_op(tmp_path, mark_processed=True)
+    hook = FakeGmailHook([msg])
+    hook.label_id_to_return = "Label_proc"
+    hook.labelled_ids = {"msg1"}
+
+    with pytest.raises(AirflowSkipException):  # the only message was filtered out
+        _run(op, hook)
+    assert hook.find_label_id_calls == ["airflow/processed"]
+    assert hook.exclude_label_id == "Label_proc"
+    assert hook.downloaded == []
+    assert "-label:" not in hook.built_query
+
+
+def test_mark_processed_true_but_label_absent_does_not_filter(tmp_path):
+    # find_label_id → None (label not in the mailbox) → exclude_label_id None, so
+    # the message is delivered normally.
+    msg = _message("msg1", "report.xlsx")
+    op = _make_op(tmp_path, mark_processed=True)
+    hook = FakeGmailHook([msg])
+    hook.label_id_to_return = None
+
+    result = _run(op, hook)
+    assert hook.find_label_id_calls == ["airflow/processed"]
+    assert hook.exclude_label_id is None
+    assert hook.downloaded == [("msg1", "report.xlsx")]
+    assert result == [os.path.join(_msg_dir(tmp_path, msg), "_manifest.json")]
+
+
+def test_mark_processed_false_never_resolves_label(tmp_path):
+    msg = _message("msg1", "report.xlsx")
+    op = _make_op(tmp_path, mark_processed=False)
+    hook = FakeGmailHook([msg])
+    _run(op, hook)
+    assert hook.find_label_id_calls == []
+    assert hook.exclude_label_id is None
 
 
 # -- write + manifest --------------------------------------------------------

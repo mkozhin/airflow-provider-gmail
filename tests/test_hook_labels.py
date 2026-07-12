@@ -184,6 +184,57 @@ def test_userid_passed_to_label_calls():
 
 
 # --------------------------------------------------------------------------- #
+# find_label_id()  (lookup-only, never creates)
+# --------------------------------------------------------------------------- #
+def test_find_label_id_returns_id_when_present():
+    rec = Recorder()
+    rec.existing_labels = [
+        {"id": "Label_1", "name": "INBOX"},
+        {"id": "Label_42", "name": "airflow/processed/avito"},
+    ]
+    hook = _hook(rec)
+
+    assert hook.find_label_id("airflow/processed/avito") == "Label_42"
+    assert len(rec.list_calls) == 1
+    assert rec.create_calls == []  # lookup only, never creates
+
+
+def test_find_label_id_returns_none_when_absent_and_does_not_create():
+    rec = Recorder()
+    rec.existing_labels = [{"id": "Label_1", "name": "INBOX"}]
+    hook = _hook(rec)
+
+    assert hook.find_label_id("airflow/processed") is None
+    assert rec.create_calls == []  # a miss must NOT create the label
+
+
+def test_find_label_id_positive_hit_is_cached():
+    # A found id is cached: the second call issues no further labels.list.
+    rec = Recorder()
+    rec.existing_labels = [{"id": "Label_42", "name": "airflow/processed"}]
+    hook = _hook(rec)
+
+    assert hook.find_label_id("airflow/processed") == "Label_42"
+    assert hook.find_label_id("airflow/processed") == "Label_42"
+    assert len(rec.list_calls) == 1  # cached, not listed again
+
+
+def test_find_label_id_miss_is_not_cached_so_later_create_still_works():
+    # A miss must NOT be cached: a subsequent get_or_create_label for the same
+    # name must still be able to create it (caching None would skip the create).
+    rec = Recorder()
+    rec.existing_labels = [{"id": "Label_1", "name": "INBOX"}]
+    rec.create_response = {"id": "Label_new"}
+    hook = _hook(rec)
+
+    assert hook.find_label_id("airflow/processed") is None
+    # Now the mailbox still has no such label; get_or_create_label must create it.
+    assert hook.get_or_create_label("airflow/processed") == "Label_new"
+    assert len(rec.create_calls) == 1
+    assert rec.create_calls[0]["body"] == {"name": "airflow/processed"}
+
+
+# --------------------------------------------------------------------------- #
 # mark_processed()
 # --------------------------------------------------------------------------- #
 def test_mark_processed_chunks_1500_ids_into_two_batches():

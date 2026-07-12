@@ -43,12 +43,14 @@ class FakeGmailHook:
         self._messages = list(messages)
         self._real = GmailHook("unused")
         self.built_query = None
+        self.exclude_label_id = "<unset>"
+        self.find_label_id_calls: list[str] = []
+        self.label_id_to_return: str | None = None
+        self.labelled_ids: set[str] = set()
 
     def build_query(
         self,
         window,
-        filter_processed_label,
-        label_name,
         from_email,
         subject_contains,
         has_attachment,
@@ -57,8 +59,6 @@ class FakeGmailHook:
     ) -> str:
         self.built_query = self._real.build_query(
             window,
-            filter_processed_label,
-            label_name,
             from_email,
             subject_contains,
             has_attachment,
@@ -67,11 +67,18 @@ class FakeGmailHook:
         )
         return self.built_query
 
-    def find_messages_with_attachments(self, query, pattern):
+    def find_label_id(self, name):
+        self.find_label_id_calls.append(name)
+        return self.label_id_to_return
+
+    def find_messages_with_attachments(self, query, pattern, exclude_label_id=None):
         import re
 
+        self.exclude_label_id = exclude_label_id
         results = []
         for msg in self._messages:
+            if exclude_label_id is not None and msg.message_id in self.labelled_ids:
+                continue
             if pattern is None:
                 matched = list(msg.attachments)
             else:
@@ -220,9 +227,11 @@ def test_poke_false_when_attachment_does_not_match_pattern():
 def test_query_parity_with_local_operator():
     """poke() and the local operator's execute() build an identical query.
 
-    Same window, range, timezone and the same ``_filter_processed_label()`` →
-    the same ``-label:`` term. The real ``build_query`` is invoked from both, so
-    the two would search the very same Gmail set.
+    Same window, range, timezone → the same query string (which no longer
+    carries any ``-label:`` term). The same ``_filter_processed_label()`` policy
+    (``mark_processed=True`` on both) → both resolve the same processed label to
+    the same ``labelId`` via ``find_label_id`` and pass it as ``exclude_label_id``
+    to ``find_messages_with_attachments``, so the two dedup identically in code.
     """
     common = {
         "source": "avito",
@@ -239,6 +248,7 @@ def test_query_parity_with_local_operator():
 
     sensor = GmailAttachmentSensor(task_id="s", **common)
     sensor_hook = FakeGmailHook([_message("msg1", "report.xlsx")])
+    sensor_hook.label_id_to_return = "Label_proc"
     sensor.hook = sensor_hook
     sensor.poke(_context())
 
@@ -246,6 +256,7 @@ def test_query_parity_with_local_operator():
     # (before the loop) but writes nothing to disk, then skips.
     op = GmailAttachmentsToLocalOperator(task_id="t", path="/data/gmail/avito", **common)
     op_hook = FakeGmailHook([])
+    op_hook.label_id_to_return = "Label_proc"
     op.hook = op_hook
     with pytest.raises(AirflowSkipException):
         op.execute(_context())
@@ -253,8 +264,13 @@ def test_query_parity_with_local_operator():
     assert sensor_hook.built_query is not None
     assert op_hook.built_query is not None
     assert sensor_hook.built_query == op_hook.built_query
-    # And the label filter really is present (mark_processed=True on both).
-    assert '-label:"airflow/processed/avito"' in sensor_hook.built_query
+    # The dedup is no longer a query term: neither query carries -label:.
+    assert "-label:" not in sensor_hook.built_query
+    # The label filter is applied identically in code: both resolve the same
+    # processed-label name to the same id and forward it as exclude_label_id.
+    assert sensor_hook.find_label_id_calls == ["airflow/processed/avito"]
+    assert op_hook.find_label_id_calls == ["airflow/processed/avito"]
+    assert sensor_hook.exclude_label_id == op_hook.exclude_label_id == "Label_proc"
 
 
 def test_query_parity_with_explicit_range():
@@ -279,3 +295,39 @@ def test_query_parity_with_explicit_range():
         op.execute(_context())
 
     assert sensor_hook.built_query == op_hook.built_query
+
+
+# -- processed-label dedup (labelIds filter, not -label:) --------------------
+
+
+def test_poke_mark_processed_true_filters_labelled_message():
+    # mark_processed=True → poke resolves the processed label id and drops a
+    # message already carrying it (labelIds filter in code, no -label: term), so
+    # the sole labelled candidate is filtered out and poke reports "no work".
+    sensor = _make_sensor(mark_processed=True, label_suffix="avito")
+    hook = FakeGmailHook([_message("msg1", "report.xlsx")])
+    hook.label_id_to_return = "Label_proc"
+    hook.labelled_ids = {"msg1"}
+    assert _poke(sensor, hook) is False
+    assert hook.find_label_id_calls == ["airflow/processed/avito"]
+    assert hook.exclude_label_id == "Label_proc"
+    assert "-label:" not in hook.built_query
+
+
+def test_poke_mark_processed_true_but_label_absent_does_not_filter():
+    # find_label_id → None (no such label yet) → exclude_label_id None, so an
+    # unlabelled matching message still surfaces.
+    sensor = _make_sensor(mark_processed=True, label_suffix="avito")
+    hook = FakeGmailHook([_message("msg1", "report.xlsx")])
+    hook.label_id_to_return = None
+    assert _poke(sensor, hook) is True
+    assert hook.find_label_id_calls == ["airflow/processed/avito"]
+    assert hook.exclude_label_id is None
+
+
+def test_poke_mark_processed_false_never_resolves_label():
+    sensor = _make_sensor(mark_processed=False)
+    hook = FakeGmailHook([_message("msg1", "report.xlsx")])
+    assert _poke(sensor, hook) is True
+    assert hook.find_label_id_calls == []
+    assert hook.exclude_label_id is None

@@ -67,16 +67,15 @@ class FakeGmailHook:
         self.mark_error = mark_error
         self._real = GmailHook("unused")
         self.window = None
-        self.filter_processed_label = None
         self.built_query = None
+        self.exclude_label_id = "<unset>"
+        self.find_label_id_calls: list[str] = []
         self.downloaded: list[tuple[str, str]] = []
         self.marked: list[tuple[list[str], str]] = []
 
     def build_query(
         self,
         window,
-        filter_processed_label,
-        label_name,
         from_email,
         subject_contains,
         has_attachment,
@@ -84,11 +83,8 @@ class FakeGmailHook:
         raw_query,
     ) -> str:
         self.window = window
-        self.filter_processed_label = filter_processed_label
         self.built_query = self._real.build_query(
             window,
-            filter_processed_label,
-            label_name,
             from_email,
             subject_contains,
             has_attachment,
@@ -97,7 +93,14 @@ class FakeGmailHook:
         )
         return self.built_query
 
-    def find_messages_with_attachments(self, query, pattern):
+    def find_label_id(self, name):
+        # The S3 policy is False, so execute() must never call this. Record any
+        # call so a regression (S3 resolving a processed label) is caught.
+        self.find_label_id_calls.append(name)
+        return "Label_should_not_be_used"
+
+    def find_messages_with_attachments(self, query, pattern, exclude_label_id=None):
+        self.exclude_label_id = exclude_label_id
         return list(self._messages)
 
     def download_attachment(self, message_id, attachment) -> bytes:
@@ -292,13 +295,15 @@ def test_empty_prefix_produces_no_leading_slash_keys():
 # -- label never filters the S3 search (ADR-0001) ---------------------------
 
 
-def test_mark_processed_true_no_label_in_query():
+def test_mark_processed_true_never_resolves_or_filters_by_label():
     store: dict = {}
     op = _make_op(store, mark_processed=True)
     hook = FakeGmailHook([])
     with pytest.raises(AirflowSkipException):
         _run(op, hook)
-    assert hook.filter_processed_label is False
+    # S3 policy is False: no label id is resolved and no exclude filter applied.
+    assert hook.find_label_id_calls == []
+    assert hook.exclude_label_id is None
     assert "-label:" not in hook.built_query
 
 
@@ -320,10 +325,12 @@ def test_retry_after_marked_but_not_returned_still_delivers():
     hook1 = FakeGmailHook([msg])
     _run(op1, hook1)
     assert hook1.marked == [(["msg1"], "airflow/processed")]  # label set
-    assert "-label:" not in hook1.built_query  # yet search is NOT label-filtered
+    # yet the search is NOT label-filtered: no id resolved, no exclude applied.
+    assert hook1.find_label_id_calls == []
+    assert hook1.exclude_label_id is None
 
-    # Retry: same run_id, same store. The message is still found (no -label:),
-    # its current-run manifest → DELIVER_ONLY → path in XCom, no re-download.
+    # Retry: same run_id, same store. The message is still found (not filtered by
+    # label), its current-run manifest → DELIVER_ONLY → path in XCom, no re-download.
     op2 = _make_op(store, mark_processed=True)
     hook2 = FakeGmailHook([msg])
     result = _run(op2, hook2)
@@ -360,7 +367,7 @@ def test_retry_without_labels_behaves_the_same():
     hook1 = FakeGmailHook([msg])
     _run(op1, hook1)
     assert hook1.marked == []
-    assert "-label:" not in hook1.built_query
+    assert hook1.exclude_label_id is None
 
     op2 = _make_op(store, mark_processed=False)
     hook2 = FakeGmailHook([msg])

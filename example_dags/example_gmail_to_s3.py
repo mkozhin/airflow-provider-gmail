@@ -71,7 +71,7 @@ with DAG(
         lookback_days=7,
         # mark_processed=False: correctness in S3 mode rests on the manifest +
         # run_id, NOT on Gmail labels (ADR-0001). Labels would need gmail.modify
-        # and a token re-issue, and `-label:` is never mixed into the S3 search.
+        # and a token re-issue, and S3 never filters processed messages by label.
         mark_processed=False,
         timezone="Europe/Moscow",  # the `dt=` partition day is computed here
     )
