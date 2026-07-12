@@ -77,6 +77,24 @@ def test_manifest_key_empty_prefix_no_leading_slash():
     assert not manifest_key("", DT, MSG).startswith("/")
 
 
+def test_operator_rel_dir_layout_matches_old_literal():
+    # The operator builds its rel_dir through message_dir with an empty prefix;
+    # the result must be byte-identical to the historical f"dt={dt}/{message_id}".
+    rel_dir = message_dir("", DT, MSG)
+    assert rel_dir == f"dt={DT}/{MSG}"
+
+
+def test_operator_manifest_key_matches_sensor_lookup():
+    # "Operator writes where sensor looks": the S3 operator keys its manifest as
+    # s3_key(prefix, rel_dir, MANIFEST_FILENAME) where rel_dir = message_dir("",…),
+    # while the S3 sensor locates it via manifest_key(prefix, dt, message_id).
+    # Both must resolve to the same object key for the same (dt, message_id).
+    prefix = "gmail/avito"
+    rel_dir = message_dir("", DT, MSG)
+    operator_key = s3_key(prefix, rel_dir, "_manifest.json")
+    assert operator_key == manifest_key(prefix, DT, MSG)
+
+
 # -- s3_key: 1024-byte whole-key guard ---------------------------------------
 
 

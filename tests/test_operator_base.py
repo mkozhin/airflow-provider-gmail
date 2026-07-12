@@ -22,13 +22,14 @@ from airflow_provider_gmail.hooks.gmail import MessageWithAttachments
 from airflow_provider_gmail.manifest import Manifest
 from airflow_provider_gmail.operators.gmail import (
     GmailAttachmentsBaseOperator,
+    GmailAttachmentsToS3Operator,
     parse_date_range,
     resolve_collisions,
     to_local_date,
     to_local_iso,
 )
 from airflow_provider_gmail.utils.mime import Attachment
-from airflow_provider_gmail.utils.paths import MANIFEST_FILENAME
+from airflow_provider_gmail.utils.paths import MANIFEST_FILENAME, manifest_key, message_dir
 
 MSK = "Europe/Moscow"
 
@@ -758,3 +759,25 @@ def test_execute_filter_label_false_never_calls_find_label_id():
     _run(op, hook)
     assert hook.find_label_id_calls == []
     assert hook.exclude_label_id is None
+
+
+# -- layout: operator writes where the S3 sensor looks (single owner) --------
+
+
+def test_execute_manifest_key_matches_sensor_manifest_key():
+    # The S3 operator's per-message manifest key (built from the base rel_dir via
+    # message_dir + MANIFEST_FILENAME) must equal the key the S3 sensor looks up
+    # through paths.manifest_key for the same (dt, message_id) — one layout owner.
+    prefix = "gmail/avito"
+    op = GmailAttachmentsToS3Operator(
+        task_id="t", source="avito", bucket="b", prefix=prefix
+    )
+    msg = _message("msg1", "a.xlsx")
+    dt = to_local_date(msg.internal_date, MSK)
+
+    rel_dir = message_dir("", dt.isoformat(), msg.message_id)
+    operator_key = op._destination_path(f"{rel_dir}/{MANIFEST_FILENAME}")
+    sensor_key = manifest_key(prefix, dt.isoformat(), msg.message_id)
+    assert operator_key == sensor_key
+    # And the rel_dir is byte-identical to the historical literal layout.
+    assert rel_dir == f"dt={dt}/{msg.message_id}"

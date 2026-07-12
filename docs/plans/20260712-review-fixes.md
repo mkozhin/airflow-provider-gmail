@@ -425,17 +425,20 @@
 - Modify: `src/airflow_provider_gmail/utils/paths.py`
 - Modify: `tests/test_operator_base.py`, `tests/test_paths.py`
 
-- [ ] operators/gmail.py:277 и :335 — литерал `"_manifest.json"` заменить на
+- [x] operators/gmail.py:277 и :335 — литерал `"_manifest.json"` заменить на
   `MANIFEST_FILENAME` (импорт уже есть, строка 50)
-- [ ] operators/gmail.py:334 — `rel_dir = f"dt={dt}/{msg.message_id}"`
+- [x] operators/gmail.py:334 — `rel_dir = f"dt={dt}/{msg.message_id}"`
   собрать через `utils/paths` (`message_dir("", dt.isoformat(), msg.message_id)`
   либо новый prefix-less helper рядом с `message_dir`) — один владелец схемы
   `dt=`; сенсор уже ходит через `paths.manifest_key`
-- [ ] поправить docstring `utils/paths.py` («Pure S3 object-key construction»
+- [x] поправить docstring `utils/paths.py` («Pure S3 object-key construction»
   → модуль используется и локальным оператором для относительной раскладки)
-- [ ] write tests: раскладка оператора и ключ сенсора совпадают для одного
+- [x] write tests: раскладка оператора и ключ сенсора совпадают для одного
   `(dt, message_id)` (связывающий тест «operator writes where sensor looks»)
-- [ ] run tests — must pass before task 12
+  — `test_operator_manifest_key_matches_sensor_lookup` /
+  `test_operator_rel_dir_layout_matches_old_literal` (test_paths.py),
+  `test_execute_manifest_key_matches_sensor_manifest_key` (test_operator_base.py)
+- [x] run tests — must pass before task 12 (340 passed, 1 deselected)
 
 ### Task 12: Verify acceptance criteria
 

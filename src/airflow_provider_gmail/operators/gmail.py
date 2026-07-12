@@ -47,7 +47,7 @@ from airflow_provider_gmail.dates import (
 from airflow_provider_gmail.hooks.gmail import GmailHook, resolve_label_name
 from airflow_provider_gmail.manifest import Decision, FileEntry, Manifest, decide
 from airflow_provider_gmail.utils.mime import Attachment, sanitize_filename
-from airflow_provider_gmail.utils.paths import MANIFEST_FILENAME, s3_key
+from airflow_provider_gmail.utils.paths import MANIFEST_FILENAME, message_dir, s3_key
 from airflow_provider_gmail.window import Window
 
 __all__ = [
@@ -277,7 +277,7 @@ class GmailAttachmentsBaseOperator(BaseOperator):
             files,
             run_id,
         )
-        self._write(f"{rel_dir}/_manifest.json", manifest.to_json())
+        self._write(f"{rel_dir}/{MANIFEST_FILENAME}", manifest.to_json())
         return manifest
 
     # -- Orchestration -------------------------------------------------------
@@ -342,8 +342,12 @@ class GmailAttachmentsBaseOperator(BaseOperator):
             query, self._compiled_pattern, exclude_label_id
         ):
             dt = to_local_date(msg.internal_date, self.timezone)
-            rel_dir = f"dt={dt}/{msg.message_id}"
-            manifest_path = self._destination_path(f"{rel_dir}/_manifest.json")
+            # Single owner of the ``dt=<date>/<message_id>`` layout: ``message_dir``
+            # with an empty prefix (``join_key`` drops the empty segment). The S3
+            # sensor locates the same message via ``paths.manifest_key``, so operator
+            # and sensor share one layout owner and can never disagree.
+            rel_dir = message_dir("", dt.isoformat(), msg.message_id)
+            manifest_path = self._destination_path(f"{rel_dir}/{MANIFEST_FILENAME}")
 
             # overwrite=True → do not read the manifest at all: a corrupt manifest
             # must not raise ManifestError during the forced re-download that

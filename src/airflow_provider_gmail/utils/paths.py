@@ -1,8 +1,11 @@
-"""Pure S3 object-key construction for the Gmail → S3 layout.
+"""Pure object-key / relative-layout construction for the Gmail → storage layout.
 
 This module is deliberately *pure*: no Airflow, no S3, no Gmail imports — only
-string joining. It provides the shared key join used across the Gmail → S3
-layout
+string joining. It is the **single owner** of the ``dt=<dt>/<message_id>``
+layout: the S3 operator and sensor build object keys through it, and the local
+operator builds its relative ``rel_dir`` through :func:`message_dir` with an
+empty prefix — so no caller re-invents the ``dt=`` / ``message_id`` scheme. It
+provides the shared key join used across the Gmail → S3 layout
 
     <prefix>/dt=<dt>/<message_id>/<filename>
     <prefix>/dt=<dt>/<message_id>/_manifest.json
