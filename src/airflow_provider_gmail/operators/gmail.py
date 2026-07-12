@@ -430,7 +430,7 @@ class GmailAttachmentsToS3Operator(GmailAttachmentsBaseOperator):
     manifest is not even read, so a corrupt ``_manifest.json`` cannot break the
     recovery it exists for. It is incompatible with the storage-aware
     ``GmailAttachmentToS3Sensor`` (which would report "no work" for a message that
-    already has a manifest); run overwrite backfills without that sensor.
+    already has a *past-run* manifest); run overwrite backfills without that sensor.
 
     The ``apache-airflow-providers-amazon`` package (the ``s3`` extra) is imported
     lazily inside the methods that need it, so this module still imports — and the

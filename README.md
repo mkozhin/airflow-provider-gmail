@@ -50,7 +50,7 @@ the manifest and does not care where the file came from.
 ```
 GmailHook                            # all the non-trivial logic
 GmailAttachmentSensor                # is there a matching email? (Gmail only)
-  └─ GmailAttachmentToS3Sensor       # + bucket/prefix: is there an email WITHOUT a manifest?
+  └─ GmailAttachmentToS3Sensor       # + bucket/prefix: is there new work (an email with no past-run manifest)?
 GmailAttachmentsBaseOperator         # abstract: search, select, manifest, label
   ├─ GmailAttachmentsToS3Operator    # + bucket/prefix/aws_conn_id, dedup, overwrite
   └─ GmailAttachmentsToLocalOperator # + path, no dedup, always overwrites
@@ -188,9 +188,10 @@ and `aws_conn_id` (default `"aws_default"`).
   stays in the Gmail result set until the window ends, so with labels off this
   sensor re-fires and the operator behind it honestly skips.
 - **`GmailAttachmentToS3Sensor`** — *"is there new work?"* Subclasses the first,
-  adds `bucket`/`prefix`/`aws_conn_id`, and drops every message that already has a
-  `_manifest.json` in S3. `True` only if at least one **unprocessed** message
-  remains. It is the natural gate for `GmailAttachmentsToS3Operator` — use it for
+  adds `bucket`/`prefix`/`aws_conn_id`, and drops every message already processed
+  by a **past run** (a `_manifest.json` in S3 from a *different* run); a manifest
+  carrying the *current* `run_id` still counts as work. `True` only if at least one
+  **unprocessed** message remains. It is the natural gate for `GmailAttachmentsToS3Operator` — use it for
   the standard recurring S3 export.
 
 ## Limitations
@@ -222,8 +223,8 @@ and `aws_conn_id` (default `"aws_default"`).
   query term) — accepting the honest caveat that a crash between labeling and
   delivery can "lose" a message on retry, which is exactly why S3 never does this.
 - **`overwrite` is incompatible with `GmailAttachmentToS3Sensor`.** The
-  storage-aware sensor discards messages that already have a manifest and would
-  report "no work", so the operator behind it never runs. Drive overwrite
+  storage-aware sensor discards messages that already have a *past-run* manifest
+  and would report "no work", so the operator behind it never runs. Drive overwrite
   backfills **without** that sensor — manually, or from a dedicated sensor-less
   backfill DAG (see `example_gmail_s3_backfill.py`).
   **PAUSE the daily DAG before backfilling over a shared prefix.** `max_active_runs=1`
@@ -338,8 +339,8 @@ See `example_dags/`:
 - **`example_gmail_to_local.py`** — download → parse → cleanup (`all_done`), with the
   worker-limit constraint and the non-idempotency spelled out.
 - **`example_gmail_s3_backfill.py`** — a manual replay with `overwrite=True` and
-  **no** `GmailAttachmentToS3Sensor` (the sensor would see the manifest and never
-  let the operator run), filling `date_from`/`date_to` from `dag_run.conf`
+  **no** `GmailAttachmentToS3Sensor` (the sensor would see the past-run manifest
+  and never let the operator run), filling `date_from`/`date_to` from `dag_run.conf`
   (ADR-0004).
 
 ## Installation

@@ -19,8 +19,10 @@ Non-idempotency (by design):
   is re-delivered on every run until it falls out of the window. The safe default
   is ``lookback_days=0`` (today only), where a message is handled in a single
   run. Dedup in local mode is possible ONLY via ``mark_processed=True`` (the
-  label removes the message from the Gmail search) — a smaller window merely
-  reduces repeats, it does not remove them.
+  provider filters out messages whose ``labelIds`` already carry the processed
+  label — a comparison done in code against the resolved processed-label id; the
+  label does NOT remove the message from Gmail's search results) — a smaller
+  window merely reduces repeats, it does not remove them.
 """
 
 from __future__ import annotations

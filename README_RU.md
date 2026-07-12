@@ -48,7 +48,7 @@
 ```
 GmailHook                            # вся нетривиальная логика
 GmailAttachmentSensor                # есть ли подходящее письмо? (только Gmail)
-  └─ GmailAttachmentToS3Sensor       # + bucket/prefix: есть ли письмо БЕЗ манифеста?
+  └─ GmailAttachmentToS3Sensor       # + bucket/prefix: есть ли новая работа (письмо без манифеста прошлого запуска)?
 GmailAttachmentsBaseOperator         # абстрактный: поиск, отбор, манифест, метка
   ├─ GmailAttachmentsToS3Operator    # + bucket/prefix/aws_conn_id, dedup, overwrite
   └─ GmailAttachmentsToLocalOperator # + path, без dedup, всегда перезаписывает
@@ -183,9 +183,10 @@ extra:     {"refresh_token": "1//09fy...",
   и при выключенных метках этот сенсор срабатывает повторно, а оператор за ним честно
   скипается.
 - **`GmailAttachmentToS3Sensor`** — *«есть ли новая работа?»* Наследует первый,
-  добавляет `bucket`/`prefix`/`aws_conn_id` и отбрасывает каждое письмо, у которого
-  уже есть `_manifest.json` в S3. `True` только если осталось хотя бы одно
-  **необработанное** письмо. Это естественный гейт для `GmailAttachmentsToS3Operator`
+  добавляет `bucket`/`prefix`/`aws_conn_id` и отбрасывает каждое письмо, уже
+  обработанное **прошлым запуском** (с `_manifest.json` в S3 от *другого* запуска);
+  манифест с *текущим* `run_id` всё ещё считается работой. `True` только если
+  осталось хотя бы одно **необработанное** письмо. Это естественный гейт для `GmailAttachmentsToS3Operator`
   — берите его для штатной регулярной S3-выгрузки.
 
 ## Ограничения
@@ -215,8 +216,8 @@ extra:     {"refresh_token": "1//09fy...",
   с честной оговоркой, что падение между проставлением метки и доставкой может «потерять»
   письмо на retry — именно поэтому в S3 так не делают.
 - **`overwrite` несовместим с `GmailAttachmentToS3Sensor`.** Storage-aware сенсор
-  отбрасывает письма, у которых уже есть манифест, и вернёт «работы нет» — оператор за
-  ним не запустится. Запускайте overwrite-backfill **без** этого сенсора — вручную или
+  отбрасывает письма, у которых уже есть манифест *прошлого запуска*, и вернёт
+  «работы нет» — оператор за ним не запустится. Запускайте overwrite-backfill **без** этого сенсора — вручную или
   из отдельного backfill-DAG без сенсора (см. `example_gmail_s3_backfill.py`).
   **Перед backfill над общим префиксом приостановите (pause) дневной DAG.**
   `max_active_runs=1` — per-DAG: он сериализует запуски самого backfill-DAG, но
@@ -329,7 +330,7 @@ extra:     {"refresh_token": "1//09fy...",
 - **`example_gmail_to_local.py`** — скачивание → парсинг → уборка (`all_done`), с явным
   упоминанием ограничения по воркерам и отсутствия идемпотентности.
 - **`example_gmail_s3_backfill.py`** — ручное переигрывание с `overwrite=True` и **без**
-  `GmailAttachmentToS3Sensor` (сенсор увидел бы манифест и не пустил бы оператор),
+  `GmailAttachmentToS3Sensor` (сенсор увидел бы манифест прошлого запуска и не пустил бы оператор),
   `date_from`/`date_to` заполняются из `dag_run.conf` (ADR-0004).
 
 ## Установка

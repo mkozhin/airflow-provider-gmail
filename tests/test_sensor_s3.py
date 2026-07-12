@@ -243,7 +243,7 @@ def test_poke_false_when_all_messages_have_manifests():
     assert _poke(sensor, FakeGmailHook([msg1, msg2])) is False
 
 
-def test_poke_manifest_of_any_run_counts_as_processed():
+def test_poke_past_run_manifest_processed_current_run_still_work():
     # A manifest from a *different* (past) run → processed, poke is False.
     store: dict = {}
     msg = _message("msg1", "a.xlsx")

@@ -271,8 +271,8 @@ class GmailAttachmentToS3Sensor(GmailAttachmentSensor):
     exactly why the cheap Gmail-only sensor stays a separate class.
 
     An ``overwrite`` backfill is incompatible with this sensor: it would report
-    "no work" for a message that already has a manifest, so the operator behind
-    it would never run. The sensor has no ``overwrite`` parameter at all — drive
+    "no work" for a message that already has a *past-run* manifest, so the
+    operator behind it would never run. The sensor has no ``overwrite`` parameter at all — drive
     overwrite backfills of :class:`GmailAttachmentsToS3Operator` without this
     sensor.
 
