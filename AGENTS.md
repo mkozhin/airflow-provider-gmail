@@ -2,14 +2,34 @@
 
 This file provides guidance to coding agents (Claude Code, and others) when working with code in this repository.
 
-## Status: pre-implementation
+## Status: implemented
 
-There is **no source code, no `pyproject.toml`, no tests, no CI yet** — only design docs.
-The design is authoritative; build it from the docs, don't invent structure ahead of them.
+The provider is fully implemented (`src/airflow_provider_gmail/`), tested
+(`tests/`, 99% coverage), and CI/publish workflows are in place (`.github/workflows/`).
+The design docs remain authoritative for *behavior*; consult them before changing it.
 
-- `docs/plans/20260710-airflow-provider-gmail.md` — master implementation plan (16 numbered tasks; some split into sub-tasks, e.g. `7a`/`7b`, `15a`–`15c` — ~19 execution units). Drives the work; keep it updated as tasks land. Progress markers: `[x]` done, `➕` new task, `⚠️` blocker.
+- `docs/plans/completed/20260710-airflow-provider-gmail.md` — the completed master
+  implementation plan (16 numbered tasks; some split into sub-tasks, e.g. `7a`/`7b`,
+  `15a`–`15c`). Historical record of what was built and why. Progress markers:
+  `[x]` done, `➕` new task, `⚠️` blocker.
 - `CONTEXT.md` — domain glossary (canonical terms).
 - `docs/adr/000*-*.md` — architectural decisions (delivery contract, timezone, backfill, etc.). Consult before changing behavior they cover.
+
+## Development commands
+
+Install (the constraint pin is mandatory, else `>=2.9,<3` pulls Airflow 2.11):
+
+```
+pip install -e ".[dev,s3]" --constraint \
+  https://raw.githubusercontent.com/apache/airflow/constraints-2.9.1/constraints-3.12.txt
+```
+
+(Match the `-3.12` suffix to the environment's Python: `3.10`/`3.11` as needed.)
+
+- Full test suite: `pytest` (the `packaging` marker is deselected by default)
+- Coverage: `pytest --cov=airflow_provider_gmail --cov-report=term-missing`
+- Packaging smoke test (build → wheel → `ProvidersManager`): `pytest -m packaging`
+  — run it explicitly whenever you touch packaging
 
 ## Domain language
 
@@ -31,9 +51,8 @@ This provider follows the standard layout codified by the **`airflow-pypi-provid
 
 ## Gotchas
 
-- **setuptools-scm needs an initial git commit** before any install/test can resolve a version (`fallback_version = "0.0.0"`).
-- Install with the constraint pin, otherwise `>=2.9,<3` pulls Airflow 2.11:
-  `pip install -e ".[dev,s3]" --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.9.1/constraints-3.12.txt`
+- **setuptools-scm resolves the version from git tags** (`fallback_version = "0.0.0"` covers a `.git`-less archive); a working tree needs at least one commit.
+- Always install with the constraint pin (see *Development commands*), otherwise `>=2.9,<3` pulls Airflow 2.11.
 - Tests use pytest; mock at the `googleapiclient` service level (`hook.get_conn()`), no network.
 - The packaging smoke test (`python -m build` → install wheel → assert `get_provider_info()` / `ProvidersManager`) is marked `@pytest.mark.packaging` and **excluded from the default run** (slow/brittle). Run it explicitly when touching packaging.
 

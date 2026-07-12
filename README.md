@@ -251,6 +251,12 @@ and `aws_conn_id` (default `"aws_default"`).
   the exact final string (always quoted) that is attached.
 - **`attachmentId` is unstable** between requests — it is used immediately after
   `messages.get` and never stored.
+- **Filenames arrive already decoded.** Gmail returns `MessagePart.filename` as a
+  ready UTF-8 string (a Cyrillic `Отчёт за июль.xlsx`, not the raw
+  `=?UTF-8?B?...?=` of the `Content-Disposition` header), so the provider applies
+  **no** RFC 2047/2231 filename decoding — only path sanitization. This was
+  confirmed against the Task 2 fixtures. Only `Subject`/`From` (read from
+  `payload.headers`) are RFC 2047-decoded, since those do carry encoded-words.
 - **A textual `after:` is interpreted in Gmail's timezone**, not yours, so the
   window edge drifts. The provider always emits a **numeric** `after:<epoch>` (and
   `before:<epoch>`) computed from midnight of the reference day in the operator's

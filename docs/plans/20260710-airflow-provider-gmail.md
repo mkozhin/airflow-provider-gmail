@@ -1411,40 +1411,45 @@ return delivered                                # → XCom: только пис�
 
 ### Task 16: [Final] Приёмка, сверка README и перенос плана (acceptance gate)
 
-- [ ] все требования из Overview реализованы
-- [ ] `access_token` не пишется ни в Connection, ни на диск (grep по коду)
-- [ ] `userId` передан во все вызовы Gmail API (grep по коду)
-- [ ] все вызовы Gmail API идут через `_execute` с `num_retries` (grep по коду)
-- [ ] `S3Hook.load_bytes` вызывается с `replace=True` (grep по коду)
-- [ ] `S3Hook` нигде не импортируется на top-level (grep: импорт `S3Hook` только внутри
+- [x] все требования из Overview реализованы
+- [x] `access_token` не пишется ни в Connection, ни на диск (grep по коду)
+- [x] `userId` передан во все вызовы Gmail API (grep по коду)
+- [x] все вызовы Gmail API идут через `_execute` с `num_retries` (grep по коду)
+- [x] `S3Hook.load_bytes` вызывается с `replace=True` (grep по коду)
+- [x] `S3Hook` нигде не импортируется на top-level (grep: импорт `S3Hook` только внутри
       методов) — установка без `[s3]` не ломает Gmail/local-классы
-- [ ] порядок «вложения → манифест → метка» покрыт тестом
-- [ ] кириллица в именах файлов и в `subject`/`from` манифеста покрыта тестами
-- [ ] inline-картинки не попадают во вложения
-- [ ] вложения с одинаковыми именами внутри письма не затирают друг друга
-- [ ] враждебное имя файла не выводит запись за пределы базового пути
-- [ ] `overwrite=True` действительно перекачивает письмо при `mark_processed=True`
-- [ ] `GmailAttachmentToS3Sensor` не срабатывает на письме с манифестом
-- [ ] дедуп по `run_id`: письмо с манифестом прошлого запуска вниз не идёт; retry
+- [x] порядок «вложения → манифест → метка» покрыт тестом
+- [x] кириллица в именах файлов и в `subject`/`from` манифеста покрыта тестами
+- [x] inline-картинки не попадают во вложения
+- [x] вложения с одинаковыми именами внутри письма не затирают друг друга
+- [x] враждебное имя файла не выводит запись за пределы базового пути
+- [x] `overwrite=True` действительно перекачивает письмо при `mark_processed=True`
+- [x] `GmailAttachmentToS3Sensor` не срабатывает на письме с манифестом
+- [x] дедуп по `run_id`: письмо с манифестом прошлого запуска вниз не идёт; retry
       того же запуска после падения на втором письме отдаёт вниз оба, без потери
-- [ ] **в S3 `-label:` не подмешивается в запрос ни при каком `mark_processed`**
+- [x] **в S3 `-label:` не подмешивается в запрос ни при каком `mark_processed`**
       (`_filter_processed_label()==False`); метка проставлена + падение до возврата →
       retry всё равно доставляет письмо (ADR-0001, покрыто тестом Task 9)
-- [ ] `lookback_days=1` нигде не назван способом дедупликации
-- [ ] `Manifest.from_json` на любом нарушении схемы даёт `ManifestError` (не `KeyError`/`TypeError`)
-- [ ] общая функция S3-ключа живёт в `utils/paths.py`, зовётся оператором и сенсором
+- [x] `lookback_days=1` нигде не назван способом дедупликации
+- [x] `Manifest.from_json` на любом нарушении схемы даёт `ManifestError` (не `KeyError`/`TypeError`)
+- [x] общая функция S3-ключа живёт в `utils/paths.py`, зовётся оператором и сенсором
       (нет зависимости `sensors → operators`, нет дублей строки формата)
-- [ ] inline не-картинка (PDF) остаётся вложением
-- [ ] схема манифеста в плане, в `docs/gmail-pipeline-layers-2-3.md` и в тесте совпадает
-- [ ] `AirflowSkipException` при отсутствии подходящих писем
-- [ ] сборка проходит packaging smoke test из Task 15b (build/twine/wheel/ProvidersManager)
-- [ ] прогнать полный набор: `pytest -q`
-- [ ] проверить покрытие: `pytest --cov=airflow_provider_gmail --cov-report=term-missing`
-- [ ] сверить `README.md` (и синхронность `README_RU.md`) с итоговым поведением;
+- [x] inline не-картинка (PDF) остаётся вложением
+- [x] схема манифеста в плане, в `docs/gmail-pipeline-layers-2-3.md` и в тесте совпадает
+- [x] `AirflowSkipException` при отсутствии подходящих писем
+- [x] сборка проходит packaging smoke test из Task 15b (build/twine/wheel/ProvidersManager)
+- [x] прогнать полный набор: `pytest -q`
+- [x] проверить покрытие: `pytest --cov=airflow_provider_gmail --cov-report=term-missing`
+- [x] сверить `README.md` (и синхронность `README_RU.md`) с итоговым поведением;
       зафиксировать результат проверки
-      фикстур из Task 2 (нужно ли декодирование `filename` на самом деле)
-- [ ] перенести этот план в `docs/plans/completed/`
-- [ ] **обновить `AGENTS.md`** (иначе следующий агент получит ложные инструкции):
+      фикстур из Task 2 (нужно ли декодирование `filename` на самом деле).
+      **Результат:** декодирование `filename` НЕ нужно — фикстура
+      `cyrillic_filename.json` подтверждает, что Gmail отдаёт `MessagePart.filename`
+      уже декодированной UTF-8-строкой (`Отчёт за июль.xlsx`), а не сырым
+      `=?UTF-8?B?...?=`. Отдельной `decode_filename` нет; применяется только
+      санитизация. Зафиксировано в «Gmail gotchas» обоих README.
+- [x] перенести этот план в `docs/plans/completed/`
+- [x] **обновить `AGENTS.md`** (иначе следующий агент получит ложные инструкции):
       снять статус «pre-implementation», поправить путь master-плана на
       `docs/plans/completed/...`, актуализировать команды разработки (реальные install/test/
       packaging-команды вместо «no source code yet»)
