@@ -889,22 +889,22 @@ return delivered                                # → XCom: только пис�
 - Modify: `src/airflow_provider_gmail/hooks/gmail.py`
 - Create: `tests/test_hook_labels.py`
 
-- [ ] `get_or_create_label(name) -> str` — `labels.list(userId=self.user_id)`, поиск по
+- [x] `get_or_create_label(name) -> str` — `labels.list(userId=self.user_id)`, поиск по
       имени, при отсутствии `labels.create(userId=..., body={"name": name})` (полное имя
       со слэшами, поля «родитель» нет); результат кешируется на время жизни хука
-- [ ] `mark_processed(message_ids, label_name)` — `messages.batchModify(userId=..., ...)`,
+- [x] `mark_processed(message_ids, label_name)` — `messages.batchModify(userId=..., ...)`,
       разбиение на пачки по 1000 id, вызовы через `_execute` (retry)
-- [ ] внятное исключение при `insufficientPermissions` (403) с подсказкой про
+- [x] внятное исключение при `insufficientPermissions` (403) с подсказкой про
       скоуп `gmail.modify` и необходимость перевыпустить `refresh_token`
-- [ ] написать тесты: метка существует → `create` не вызывается; метки нет →
+- [x] написать тесты: метка существует → `create` не вызывается; метки нет →
       создаётся; создание глубоко вложенной метки `airflow/processed/avito`, когда
       ни `airflow`, ни `airflow/processed` ещё не существуют; 1500 id → ровно два
       вызова `batchModify`; 403 → своё исключение
-- [ ] написать тест на кэш: повторный `get_or_create_label` с тем же именем не зовёт
+- [x] написать тест на кэш: повторный `get_or_create_label` с тем же именем не зовёт
       `labels.list`/`labels.create` второй раз. Про гонку конкурентного создания одной
       метки разными DAG — задокументировать: `labels.create` может дать дубликат имени,
       это некритично (обе метки функциональны), отдельной блокировки не вводим
-- [ ] запустить `pytest` — должен пройти до перехода к задаче 7a
+- [x] запустить `pytest` — должен пройти до перехода к задаче 7a
 
 ### Task 7a: manifest.py — чистый доменный модуль
 

@@ -25,6 +25,7 @@ from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 from airflow_provider_gmail.utils.mime import Attachment, header, iter_attachments
 from airflow_provider_gmail.window import Window
@@ -110,6 +111,33 @@ class GmailAuthError(AirflowException):
     """Authentication against Gmail failed (bad/missing/expired credentials)."""
 
 
+_MODIFY_HINT = (
+    "Gmail refused a label modification with 403 insufficientPermissions. "
+    "Marking messages needs the 'https://www.googleapis.com/auth/gmail.modify' "
+    "scope, but the refresh_token was issued with a narrower scope (e.g. "
+    "gmail.readonly). Scopes cannot be widened on an existing refresh_token: "
+    "re-issue it by walking through the OAuth consent again with gmail.modify "
+    "granted."
+)
+
+_MODIFY_BATCH_SIZE = 1000
+
+
+class GmailPermissionError(AirflowException):
+    """A Gmail label modification was refused for lack of the gmail.modify scope."""
+
+
+def _is_insufficient_permissions(exc: HttpError) -> bool:
+    """True when ``exc`` is a 403 whose reason is ``insufficientPermissions``."""
+    status = getattr(getattr(exc, "resp", None), "status", None)
+    if status != 403:
+        return False
+    content = getattr(exc, "content", b"") or b""
+    if isinstance(content, bytes):
+        content = content.decode("utf-8", "replace")
+    return "insufficientPermissions" in content
+
+
 class GmailHook(BaseHook):
     """Authenticate to Gmail and expose a cached ``googleapiclient`` service.
 
@@ -130,6 +158,7 @@ class GmailHook(BaseHook):
         self.gmail_conn_id = gmail_conn_id
         self.num_retries = num_retries
         self._service = None
+        self._label_ids: dict[str, str] = {}
 
     @cached_property
     def user_id(self) -> str:
@@ -357,6 +386,88 @@ class GmailHook(BaseHook):
                 )
             )
         return results
+
+    def _execute_modify(self, request):
+        """Run a mutating Gmail request, translating a 403 into a clear error.
+
+        ``labels.create`` and ``messages.batchModify`` both need the
+        ``gmail.modify`` scope. When the ``refresh_token`` was issued read-only,
+        Gmail answers 403 ``insufficientPermissions``; that surfaces here as
+        :class:`GmailPermissionError` with a hint to re-issue the token, instead
+        of a raw ``HttpError``.
+        """
+        try:
+            return self._execute(request)
+        except HttpError as exc:
+            if _is_insufficient_permissions(exc):
+                raise GmailPermissionError(_MODIFY_HINT) from exc
+            raise
+
+    def get_or_create_label(self, name: str) -> str:
+        """Return the ``labelId`` for ``name``, creating the label if missing.
+
+        Lists ``users.labels`` and matches on the **full** name (slashes and
+        all — nested Gmail labels are flat strings, there is no parent field);
+        on a miss, ``labels.create`` makes it with the full name in one call
+        (``airflow/processed/avito`` is created directly even when neither
+        ``airflow`` nor ``airflow/processed`` exists yet). The result is cached
+        for the hook's lifetime, so a repeated call for the same name issues no
+        further ``labels.list``/``labels.create``.
+
+        Concurrency: two overlapping ``DagRun``s of the same export may both miss
+        the label and both create it, yielding two labels with the same name.
+        This is non-critical — both labels are functional and searching by name
+        still works — so no lock is introduced; ``max_active_runs=1`` on the DAG
+        avoids it entirely.
+        """
+        cached = self._label_ids.get(name)
+        if cached is not None:
+            return cached
+
+        service = self.get_conn()
+        request = service.users().labels().list(userId=self.user_id)
+        response = self._execute(request)
+        for label in response.get("labels", []):
+            if label.get("name") == name:
+                label_id = label["id"]
+                self._label_ids[name] = label_id
+                return label_id
+
+        request = (
+            service.users()
+            .labels()
+            .create(userId=self.user_id, body={"name": name})
+        )
+        created = self._execute_modify(request)
+        label_id = created["id"]
+        self._label_ids[name] = label_id
+        return label_id
+
+    def mark_processed(self, message_ids: list[str], label_name: str) -> None:
+        """Attach ``label_name`` to every message id via ``messages.batchModify``.
+
+        The label name is resolved to a ``labelId`` once through
+        :meth:`get_or_create_label`. Ids are sent in batches of at most 1000
+        (``messages.batchModify`` caps at 1000 per call), each through the
+        retrying :meth:`_execute`. A missing ``gmail.modify`` scope surfaces as
+        :class:`GmailPermissionError`.
+        """
+        if not message_ids:
+            return
+
+        label_id = self.get_or_create_label(label_name)
+        service = self.get_conn()
+        for start in range(0, len(message_ids), _MODIFY_BATCH_SIZE):
+            chunk = message_ids[start : start + _MODIFY_BATCH_SIZE]
+            request = (
+                service.users()
+                .messages()
+                .batchModify(
+                    userId=self.user_id,
+                    body={"ids": chunk, "addLabelIds": [label_id]},
+                )
+            )
+            self._execute_modify(request)
 
     @staticmethod
     def get_connection_form_widgets() -> dict:
