@@ -248,6 +248,25 @@ def test_download_attachment_empty_file_data():
     assert rec.attachment_calls == []
 
 
+def test_download_attachment_no_source_raises():
+    # Falsy attachment_id AND data is None: neither body source is usable. Fail
+    # loudly instead of silently returning b"" (which a manifest would dedup
+    # permanently — data loss).
+    from airflow.exceptions import AirflowException
+
+    rec = Recorder()
+    hook = _hook(rec)
+    attachment = Attachment(
+        filename="ghost.pdf",
+        mime_type="application/pdf",
+        attachment_id="",
+        data=None,
+    )
+    with pytest.raises(AirflowException, match="no usable body source"):
+        hook.download_attachment("mX", attachment)
+    assert rec.attachment_calls == []
+
+
 def test_download_attachment_response_without_data_key_raises_key_error():
     # A malformed attachments.get response (no "data" key) fails loudly with a
     # KeyError rather than silently returning garbage.

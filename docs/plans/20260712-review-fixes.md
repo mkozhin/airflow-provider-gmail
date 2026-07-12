@@ -237,20 +237,21 @@
 - Modify: `tests/test_mime.py`
 - Modify: `tests/test_hook_search.py`
 
-- [ ] в `_as_attachment` (mime.py:163) источник тела считать по
+- [x] в `_as_attachment` (mime.py:163) источник тела считать по
   `bool(body.get("attachmentId")) or ("data" in body)` — пустой `attachmentId`
   без `data` не делает часть вложением; docstring `iter_attachments` уточнить
   (пустая строка `data == ""` по-прежнему валидный источник — ключ есть)
-- [ ] в `download_attachment` (hooks/gmail.py:363-365) заменить
+- [x] в `download_attachment` (hooks/gmail.py:363-365) заменить
   `return _b64url_decode(attachment.data or "")` на: при `data is None` —
   `AirflowException` с внятным текстом (вместо тихого `b""`); поправить
   комментарий «guaranteed present by iter_attachments»
-- [ ] write tests (mime): часть `{"attachmentId": ""}` без `data` не выдаётся;
+- [x] write tests (mime): часть `{"attachmentId": ""}` без `data` не выдаётся;
   часть с `attachmentId=""` и `data` — выдаётся (тело из `data`); легитимный
   пустой файл (`data == ""`, фикстура `empty_file.json`) — без изменений
-- [ ] write tests (hook): `download_attachment` с falsy `attachment_id` и
-  `data=None` бросает исключение; с `data=""` возвращает `b""`
-- [ ] run tests — must pass before task 5
+- [x] write tests (hook): `download_attachment` с falsy `attachment_id` и
+  `data=None` бросает исключение; с `data=""` возвращает `b""` (покрыто
+  существующим `test_download_attachment_empty_file_data`)
+- [x] run tests — must pass before task 5
 
 ### Task 5: Квотирование метасимволов в значениях запроса
 

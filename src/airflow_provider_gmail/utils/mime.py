@@ -139,9 +139,11 @@ def iter_attachments(payload: dict) -> Iterator[Attachment]:
     """Yield attachments from a message payload, walking the MIME tree recursively.
 
     A part is an attachment when it has a non-empty ``filename`` and at least one
-    body source — the ``attachmentId`` key or the ``data`` key in ``body``
-    (checked by key *presence*, not truthiness, so an empty file with
-    ``data == ""`` still counts). Inline images are dropped: a part is skipped
+    body source — a **non-empty** ``attachmentId`` or the ``data`` key in
+    ``body``. The ``data`` key is checked by *presence*, not truthiness, so an
+    empty file with ``data == ""`` still counts; but an empty-string
+    ``attachmentId`` with no ``data`` key is **not** a body source (it points at
+    nothing). Inline images are dropped: a part is skipped
     only if it is ``inline`` **and** its ``mimeType`` starts with ``image/``.
     Inline non-images (PDF, xlsx) stay attachments — a Content-ID does not
     demote them.
@@ -179,7 +181,7 @@ def _as_attachment(part: dict) -> Attachment | None:
         return None
 
     body = part.get("body") or {}
-    has_source = ("attachmentId" in body) or ("data" in body)
+    has_source = bool(body.get("attachmentId")) or ("data" in body)
     if not has_source:
         return None
 

@@ -286,6 +286,46 @@ def test_part_without_any_body_source_is_not_attachment():
     assert list(iter_attachments(payload)) == []
 
 
+def test_empty_attachment_id_without_data_is_not_attachment():
+    # An empty-string attachmentId with no data key points at nothing — it is
+    # not a body source, so the part is not yielded.
+    payload = {
+        "mimeType": "multipart/mixed",
+        "parts": [
+            {
+                "mimeType": "application/pdf",
+                "filename": "ghost.pdf",
+                "body": {"attachmentId": ""},
+            }
+        ],
+    }
+    assert list(iter_attachments(payload)) == []
+
+
+def test_empty_attachment_id_with_data_is_attachment_from_data():
+    # attachmentId == "" is not a source, but a present data key is: the part is
+    # an attachment whose body comes from data.
+    payload = {
+        "mimeType": "multipart/mixed",
+        "parts": [
+            {
+                "mimeType": "text/csv",
+                "filename": "small.csv",
+                "body": {
+                    "attachmentId": "",
+                    "data": base64.urlsafe_b64encode(b"a,b,c").decode(),
+                },
+            }
+        ],
+    }
+    result = list(iter_attachments(payload))
+    assert len(result) == 1
+    att = result[0]
+    assert att.filename == "small.csv"
+    assert att.attachment_id == ""
+    assert att.data == base64.urlsafe_b64encode(b"a,b,c").decode()
+
+
 # --------------------------------------------------------------------------
 # inline filtering
 # --------------------------------------------------------------------------

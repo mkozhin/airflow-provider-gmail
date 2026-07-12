@@ -360,9 +360,20 @@ class GmailHook(BaseHook):
             response = self._execute(request)
             return _b64url_decode(response["data"])
 
-        # No usable attachment_id: the body is inlined in `data` (guaranteed
-        # present by iter_attachments when attachmentId is absent; possibly "").
-        return _b64url_decode(attachment.data or "")
+        # No usable attachment_id: the body must be inlined in `data`. When
+        # iter_attachments accepted this part it required a body source, so a
+        # falsy attachment_id means the `data` key was present — but only its
+        # *presence* was checked, so `data` may legitimately be "" (empty file)
+        # which decodes to b"". A None here means neither source was usable:
+        # fail loudly instead of silently delivering a zero-byte file that a
+        # "successful" manifest would dedup permanently (data loss).
+        if attachment.data is None:
+            raise AirflowException(
+                "Attachment has no usable body source: attachment_id is "
+                f"{attachment.attachment_id!r} and data is None "
+                f"(filename={attachment.filename!r}, message_id={message_id!r})."
+            )
+        return _b64url_decode(attachment.data)
 
     def find_messages_with_attachments(
         self, query: str, pattern: str | re.Pattern[str] | None
