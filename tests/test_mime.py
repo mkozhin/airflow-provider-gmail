@@ -270,8 +270,63 @@ def test_inline_image_by_content_id_without_image_mime_still_needs_inline():
 
 def test_inline_pdf_remains_attachment():
     result = list(iter_attachments(payload_of("inline_pdf.json")))
-    # inline; filename="report.pdf" but not an image and no Content-ID -> kept.
+    # inline; filename="report.pdf" but not an image -> kept.
     assert [a.filename for a in result] == ["report.pdf"]
+
+
+def test_inline_pdf_with_content_id_remains_attachment():
+    # Gateways / Apple Mail stamp Content-ID onto genuine PDF/xlsx parts.
+    # A Content-ID must NOT demote a non-image part to an inline image.
+    payload = {
+        "mimeType": "multipart/related",
+        "parts": [
+            {
+                "mimeType": "application/pdf",
+                "filename": "report.pdf",
+                "headers": [
+                    {"name": "Content-Disposition", "value": "inline"},
+                    {"name": "Content-ID", "value": "<report@x>"},
+                ],
+                "body": {"attachmentId": "id-report"},
+            }
+        ],
+    }
+    assert [a.filename for a in iter_attachments(payload)] == ["report.pdf"]
+
+
+def test_inline_image_with_content_id_still_dropped():
+    payload = {
+        "mimeType": "multipart/related",
+        "parts": [
+            {
+                "mimeType": "image/png",
+                "filename": "logo.png",
+                "headers": [
+                    {"name": "Content-Disposition", "value": "inline"},
+                    {"name": "Content-ID", "value": "<logo@x>"},
+                ],
+                "body": {"attachmentId": "id-logo"},
+            }
+        ],
+    }
+    assert list(iter_attachments(payload)) == []
+
+
+def test_inline_image_without_content_id_still_dropped():
+    payload = {
+        "mimeType": "multipart/related",
+        "parts": [
+            {
+                "mimeType": "image/gif",
+                "filename": "spacer.gif",
+                "headers": [
+                    {"name": "Content-Disposition", "value": "inline"},
+                ],
+                "body": {"attachmentId": "id-spacer"},
+            }
+        ],
+    }
+    assert list(iter_attachments(payload)) == []
 
 
 # --------------------------------------------------------------------------

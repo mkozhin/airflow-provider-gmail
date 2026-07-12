@@ -239,8 +239,9 @@ extra:     {"refresh_token": "1//09fy...",
   грубое сужение на сервере; точный отбор — `attachment_pattern` (`re.search`).
 - **`has:attachment` считает inline-картинки.** Логотип в подписи (`image001.png`) —
   тоже вложение. Провайдер оставляет только части с непустым `filename` и выкидывает
-  часть **только** если она inline *и* (`mime_type` начинается с `image/` *или* есть
-  `Content-ID`). Inline-PDF/xlsx остаются; от лишнего защищает `attachment_pattern`.
+  часть **только** если она inline *и* `mime_type` начинается с `image/`.
+  Inline-PDF/xlsx остаются (`Content-ID` их не понижает); от лишнего защищает
+  `attachment_pattern`.
 - **Вложенные метки не иерархичны при поиске.** `label:airflow/processed` **не**
   находит письмо, помеченное только `airflow/processed/avito`. Поэтому в `-label:`
   подставляется ровно та же итоговая строка (всегда в кавычках), которую вешаем.

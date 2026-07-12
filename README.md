@@ -249,8 +249,8 @@ and `aws_conn_id` (default `"aws_default"`).
 - **`has:attachment` counts inline images.** A logo in a signature
   (`image001.png`) is an attachment too. The provider keeps only parts with a
   non-empty `filename` and drops a part **only** if it is inline *and*
-  (`mime_type` starts with `image/` *or* it has a `Content-ID`). Inline PDFs/xlsx
-  are kept; `attachment_pattern` guards against extras.
+  `mime_type` starts with `image/`. Inline PDFs/xlsx are kept (a `Content-ID`
+  does not demote them); `attachment_pattern` guards against extras.
 - **Nested labels are not hierarchical in search.** `label:airflow/processed` does
   **not** match a message labeled only `airflow/processed/avito`. So `-label:` uses
   the exact final string (always quoted) that is attached.

@@ -164,22 +164,23 @@
 - Modify: `README_RU.md`
 - Modify: `tests/test_mime.py`
 
-- [ ] в `_is_inline_image` (mime.py:180-191) убрать финальный
+- [x] в `_is_inline_image` (mime.py:180-191) убрать финальный
   `return _find_header(headers, "Content-ID") is not None` — вернуть `False`;
   часть отбрасывается только при `inline` **и** `image/*`
-- [ ] обновить docstring `iter_attachments` (mime.py:138-140): правило теперь
+- [x] обновить docstring `iter_attachments` (mime.py:138-140): правило теперь
   «inline и image/*», без Content-ID
-- [ ] в CONTEXT.md убрать из правила исключения условие «ИЛИ есть Content-ID»,
+- [x] в CONTEXT.md убрать из правила исключения условие «ИЛИ есть Content-ID»,
   оставить обещание «Inline не-картинки (PDF, xlsx) — остаются вложениями»
-- [ ] обновить описание правила в README.md:247-251 («drops a part only if it
+- [x] обновить описание правила в README.md:247-251 («drops a part only if it
   is inline *and* (`image/` *or* it has a `Content-ID`)») и параллельный
   фрагмент README_RU.md — старое правило описано и там
-- [ ] write tests: inline-PDF **с** Content-ID остаётся вложением (новый кейс
+- [x] write tests: inline-PDF **с** Content-ID остаётся вложением (новый кейс
   рядом с `test_inline_pdf_remains_attachment`); inline `image/*` с Content-ID
   и без — по-прежнему отбрасывается
-- [ ] проверить/обновить фикстуру `tests/fixtures/gmail/inline_image.json`,
-  если она полагалась на Content-ID-ветку
-- [ ] run tests — must pass before task 2
+- [x] проверить/обновить фикстуру `tests/fixtures/gmail/inline_image.json`,
+  если она полагалась на Content-ID-ветку (image/png + inline → по-прежнему
+  отбрасывается по правилу image/*; изменений не потребовалось)
+- [x] run tests — must pass before task 2
 
 ### Task 2: Вложенные письма (.eml, message/rfc822) — вложение, а не контейнер
 

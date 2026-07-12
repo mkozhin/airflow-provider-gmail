@@ -136,8 +136,9 @@ def iter_attachments(payload: dict) -> Iterator[Attachment]:
     body source — the ``attachmentId`` key or the ``data`` key in ``body``
     (checked by key *presence*, not truthiness, so an empty file with
     ``data == ""`` still counts). Inline images are dropped: a part is skipped
-    only if it is ``inline`` **and** (its ``mimeType`` starts with ``image/``
-    **or** it carries a ``Content-ID`` header).
+    only if it is ``inline`` **and** its ``mimeType`` starts with ``image/``.
+    Inline non-images (PDF, xlsx) stay attachments — a Content-ID does not
+    demote them.
     """
     yield from _walk(payload)
 
@@ -186,9 +187,10 @@ def _is_inline_image(mime_type: str, headers: list[dict]) -> bool:
     first_token = disposition.split(";", 1)[0].strip().lower()
     if first_token != "inline":
         return False
-    if mime_type.lower().startswith("image/"):
-        return True
-    return _find_header(headers, "Content-ID") is not None
+    # Drop only inline *images*. A Content-ID alone is not enough: gateways and
+    # Apple Mail stamp Content-ID onto real PDF/xlsx parts, so keying off it
+    # would silently drop genuine attachments — the worst kind of failure.
+    return mime_type.lower().startswith("image/")
 
 
 def _find_header(headers: list[dict], name: str) -> str | None:
