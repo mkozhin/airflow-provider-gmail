@@ -846,42 +846,42 @@ return delivered                                # → XCom: только пис�
 - Modify: `src/airflow_provider_gmail/hooks/gmail.py`
 - Create: `tests/test_hook_search.py`
 
-- [ ] хелпер `_execute(request)` — все вызовы API идут через `.execute(num_retries=N)`
+- [x] хелпер `_execute(request)` — все вызовы API идут через `.execute(num_retries=N)`
       (экспоненциальный backoff для 429/5xx); `num_retries` — параметр хука, дефолт 3
-- [ ] `search(query) -> list[str]` — `users.messages.list(userId=self.user_id, ...)`
+- [x] `search(query) -> list[str]` — `users.messages.list(userId=self.user_id, ...)`
       с пагинацией по `nextPageToken`; читать `.get("messages", [])` — при пустом
       результате ключа нет
-- [ ] `get_message(message_id) -> dict` — `users.messages.get(userId=..., format="full")`
-- [ ] `download_attachment(message_id, attachment) -> bytes` — если у вложения есть
+- [x] `get_message(message_id) -> dict` — `users.messages.get(userId=..., format="full")`
+- [x] `download_attachment(message_id, attachment) -> bytes` — если у вложения есть
       `data`, декодировать её; иначе `users.messages.attachments.get(userId=..., ...)`
       по `attachment_id`; в обоих случаях `base64.urlsafe_b64decode` с добивкой padding
-- [ ] `find_messages_with_attachments(query, pattern) -> list[MessageWithAttachments]` —
+- [x] `find_messages_with_attachments(query, pattern) -> list[MessageWithAttachments]` —
       **единственное место**, где живут поиск, `get_message`, `iter_attachments`, отбор
       по паттерну и INFO-лог «не наше письмо». Им пользуются и оператор, и оба сенсора;
       второй копии этой логики в проекте быть не должно
-- [ ] `MessageWithAttachments` несёт всё, что нужно оператору для манифеста:
+- [x] `MessageWithAttachments` несёт всё, что нужно оператору для манифеста:
       `message_id`, `internal_date`, `subject`, `from_` (уже декодированные через
       `header()`), `attachments` (только совпавшие). Иначе оператор полезет в `payload`
       сам и продублирует разбор
-- [ ] `pattern is None` → подходят все вложения (кроме inline); проверку делает хук
-- [ ] **логировать INFO** для писем, прошедших фильтр поиска, но не давших ни одного
+- [x] `pattern is None` → подходят все вложения (кроме inline); проверку делает хук
+- [x] **логировать INFO** для писем, прошедших фильтр поиска, но не давших ни одного
       совпадения: с перечислением реальных имён вложений и самого паттерна
-- [ ] написать тесты: пагинация (две страницы); пустой ответ без ключа `messages`;
+- [x] написать тесты: пагинация (две страницы); пустой ответ без ключа `messages`;
       паттерн `None` → все вложения; вложение через `body.data` без `attachmentId`;
       декодирование base64url с padding; `subject`/`from_` декодированы из кириллицы
-- [ ] написать тест на INFO-лог: письмо с вложениями `[a.pdf, b.png]` и паттерном
+- [x] написать тест на INFO-лог: письмо с вложениями `[a.pdf, b.png]` и паттерном
       `\.xlsx$` → результат пуст, **в логе есть обе реальные имени и паттерн**
       (лог назван обязательным элементом, значит проверяется утверждением, а не глазами)
-- [ ] написать тест: `download_attachment` возвращает корректные байты и для `data`,
+- [x] написать тест: `download_attachment` возвращает корректные байты и для `data`,
       и для `attachmentId`; `len(результата)` совпадает с ожидаемым (проверка размера —
       здесь, после декодирования, а не на уровне `Attachment`, где байт ещё нет)
-- [ ] написать тест: `userId` передан во все вызовы — `"me"` по умолчанию и
+- [x] написать тест: `userId` передан во все вызовы — `"me"` по умолчанию и
       произвольный адрес при заданном `extra.user_id`
-- [ ] написать тест на retry: проверяется, что `.execute()` вызван с `num_retries=N`.
+- [x] написать тест на retry: проверяется, что `.execute()` вызван с `num_retries=N`.
       Эмулировать «429 → успех со второй попытки» на уровне мока бессмысленно —
       повтор живёт внутри `HttpRequest.execute`, а не в нашем коде. Полноценная
       проверка backoff, если понадобится, строится на `HttpRequest` с fake transport
-- [ ] запустить `pytest` — должен пройти до перехода к задаче 6
+- [x] запустить `pytest` — должен пройти до перехода к задаче 6
 
 ### Task 6: GmailHook — работа с метками
 

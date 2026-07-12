@@ -14,6 +14,9 @@ Gmail call in later tasks.
 
 from __future__ import annotations
 
+import base64
+import re
+from dataclasses import dataclass
 from functools import cached_property
 
 from airflow.exceptions import AirflowException
@@ -23,6 +26,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
+from airflow_provider_gmail.utils.mime import Attachment, header, iter_attachments
 from airflow_provider_gmail.window import Window
 
 _TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -62,6 +66,37 @@ def _field_value(value: str) -> str:
     escaped = _escape(value)
     return f'"{escaped}"' if needs_quote else escaped
 
+def _b64url_decode(data: str) -> bytes:
+    """Decode a base64url attachment body, fixing up missing ``=`` padding.
+
+    Gmail hands attachment bodies as base64url (``-``/``_`` alphabet) and often
+    omits the trailing padding. ``urlsafe_b64decode`` needs the length to be a
+    multiple of four, so the padding is restored first. An empty string decodes
+    to empty bytes (an empty file legitimately arrives as ``data == ""``).
+    """
+    padding = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(data + padding)
+
+
+@dataclass
+class MessageWithAttachments:
+    """A matched message plus everything the operator needs for the manifest.
+
+    Carries the opaque ``message_id``, the ``internal_date`` (epoch milliseconds,
+    as Gmail returns it — the operator converts it to the operator timezone), the
+    already-decoded ``subject`` and ``from_`` headers, and only the
+    ``attachments`` that matched ``attachment_pattern``. Holding these here keeps
+    the operator out of the raw ``payload`` so the MIME parsing lives in one
+    place.
+    """
+
+    message_id: str
+    internal_date: int
+    subject: str | None
+    from_: str | None
+    attachments: list[Attachment]
+
+
 _REFRESH_HINT = (
     "Gmail refresh_token was rejected (revoked or expired). Re-issue it by "
     "walking through the OAuth consent again, and make sure the OAuth "
@@ -88,9 +123,12 @@ class GmailHook(BaseHook):
     conn_type = "gmail"
     hook_name = "Gmail"
 
-    def __init__(self, gmail_conn_id: str = default_conn_name) -> None:
+    def __init__(
+        self, gmail_conn_id: str = default_conn_name, num_retries: int = 3
+    ) -> None:
         super().__init__()
         self.gmail_conn_id = gmail_conn_id
+        self.num_retries = num_retries
         self._service = None
 
     @cached_property
@@ -203,6 +241,122 @@ class GmailHook(BaseHook):
             terms.append(f'-label:"{_escape(label_name)}"')
 
         return " ".join(terms)
+
+    def _execute(self, request):
+        """Run a Gmail API request with the hook's built-in retry.
+
+        ``googleapiclient`` does **not** retry by default; Gmail throttles at
+        250 quota units/user/second, so 429s are a matter of time under dozens
+        of exports. ``execute(num_retries=N)`` adds exponential backoff for 429
+        and 5xx. Every API call in the hook goes through here.
+        """
+        return request.execute(num_retries=self.num_retries)
+
+    def search(self, query: str) -> list[str]:
+        """Return the message ids matching ``query``, following pagination.
+
+        Walks ``users.messages.list`` page by page via ``nextPageToken`` and
+        reads ``.get("messages", [])`` — an empty result carries no ``messages``
+        key, so indexing would raise ``KeyError`` instead of an honest "no mail".
+        """
+        service = self.get_conn()
+        message_ids: list[str] = []
+        page_token: str | None = None
+        while True:
+            request = (
+                service.users()
+                .messages()
+                .list(userId=self.user_id, q=query, pageToken=page_token)
+            )
+            response = self._execute(request)
+            for message in response.get("messages", []):
+                message_ids.append(message["id"])
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+        return message_ids
+
+    def get_message(self, message_id: str) -> dict:
+        """Fetch a single message with the full MIME payload (``format="full"``)."""
+        service = self.get_conn()
+        request = (
+            service.users()
+            .messages()
+            .get(userId=self.user_id, id=message_id, format="full")
+        )
+        return self._execute(request)
+
+    def download_attachment(self, message_id: str, attachment: Attachment) -> bytes:
+        """Return the decoded bytes of ``attachment``.
+
+        The body arrives two ways: usually as ``attachment_id`` (fetched with a
+        separate ``attachments.get`` call), but small attachments may inline the
+        base64url body in ``data``. The choice is made on the **presence** of
+        ``data`` (``attachment.data is not None``), not its truthiness — an empty
+        file legitimately yields ``data == ""``. One attachment loads whole into
+        memory; Gmail caps incoming messages at 25 MB, so the upper bound is
+        known.
+        """
+        if attachment.data is not None:
+            return _b64url_decode(attachment.data)
+
+        service = self.get_conn()
+        request = (
+            service.users()
+            .messages()
+            .attachments()
+            .get(userId=self.user_id, messageId=message_id, id=attachment.attachment_id)
+        )
+        response = self._execute(request)
+        return _b64url_decode(response["data"])
+
+    def find_messages_with_attachments(
+        self, query: str, pattern: str | None
+    ) -> list[MessageWithAttachments]:
+        """Search, fetch, walk the MIME tree and keep the matching attachments.
+
+        This is the **single** place that holds search + ``get_message`` +
+        ``iter_attachments`` + pattern filtering + the "not our email" INFO log.
+        Both the operator and both sensors go through here; there must be no
+        second copy of this logic.
+
+        ``pattern`` is an :func:`re.search` over the **decoded** filename; when it
+        is ``None`` every attachment matches (inline images are already dropped
+        by :func:`iter_attachments`). A message that passed the search but
+        matched no attachment is logged at INFO with the real attachment
+        filenames and the pattern, then dropped — a renamed report otherwise
+        turns into a green task with no data.
+        """
+        results: list[MessageWithAttachments] = []
+        for message_id in self.search(query):
+            message = self.get_message(message_id)
+            payload = message.get("payload") or {}
+            attachments = list(iter_attachments(payload))
+            if pattern is None:
+                matched = attachments
+            else:
+                matched = [a for a in attachments if re.search(pattern, a.filename)]
+
+            if not matched:
+                self.log.info(
+                    "Message %s passed the search but no attachment matched "
+                    "pattern %r; attachments: [%s]",
+                    message_id,
+                    pattern,
+                    ", ".join(a.filename for a in attachments),
+                )
+                continue
+
+            results.append(
+                MessageWithAttachments(
+                    message_id=message_id,
+                    internal_date=int(message["internalDate"]),
+                    subject=header(payload, "Subject"),
+                    from_=header(payload, "From"),
+                    attachments=matched,
+                )
+            )
+        return results
 
     @staticmethod
     def get_connection_form_widgets() -> dict:
