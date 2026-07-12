@@ -442,17 +442,38 @@
 
 ### Task 12: Verify acceptance criteria
 
-- [ ] пройтись по Overview/Solution Overview: все 12 согласованных пунктов
-  реализованы, решения пользователя не искажены
-- [ ] краевые случаи: пустые имена, dotfiles, `data == ""`,
-  `attachmentId == ""`, rfc822 без внутренних вложений, письмо без `labelIds`
-- [ ] run full test suite: `pytest`
-- [ ] coverage: `pytest --cov=airflow_provider_gmail --cov-report=term-missing`
-  — не ниже уровня до правок (~99%)
-- [ ] `grep -rn -- '-label:' src/ docs/adr/ CONTEXT.md README* example_dags/`
-  — упоминаний старого механизма не осталось (исторический план
-  `docs/plans/completed/` и сгенерированный `*.egg-info` из проверки
-  исключены намеренно)
+- [x] пройтись по Overview/Solution Overview: все 12 согласованных пунктов
+  реализованы, решения пользователя не искажены — spot-read подтвердил:
+  inline-фильтр только image/* (mime.py:201-213), .eml как вложение без
+  рекурсии (mime.py:163-198), `os.path.splitext` в mime + операторе
+  (mime.py:84, operators/gmail.py:103), контракт пустого attachmentId
+  (mime.py:184, hooks/gmail.py:359-387), квотирование метасимволов
+  (hooks/gmail.py:64-74), labelIds-dedup вместо `-label:`
+  (hooks/gmail.py:409-426), sensor run_id (`manifest.run_id != run_id`,
+  sensors/gmail.py:343), честный soft_fail (sensors/gmail.py:63-66),
+  backfill-предупреждение (example_dags/…backfill.py:27-35),
+  MANIFEST_FILENAME + единый владелец раскладки через `message_dir`
+  (operators/gmail.py:345-350)
+- [x] краевые случаи покрыты тестами: пустые имена
+  (`test_sanitize_empty_falls_back`, `…_long_extensionless_name_not_dropped_to_empty`),
+  dotfiles (`test_sanitize_dotfile_passes_through_undistorted`,
+  `test_resolve_collisions_two_dotfiles`), `data == ""`
+  (`test_empty_file_recognized_as_attachment`,
+  `test_download_attachment_empty_file_data`), `attachmentId == ""`
+  (test_mime.py:298/315, `…no usable body source`), rfc822 без протечки
+  внутренних вложений (`test_forwarded_eml_delivered_as_single_attachment`,
+  `test_rfc822_without_body_source_still_recurses`), письмо без `labelIds`
+  (`test_exclude_label_id_handles_message_without_labelids_key`) — новых
+  пробелов нет
+- [x] run full test suite: `pytest` — 340 passed, 1 deselected
+- [x] coverage: `pytest --cov=airflow_provider_gmail --cov-report=term-missing`
+  — 99% (не ниже уровня до правок)
+- [x] `grep -rn -- '-label:' src/ docs/adr/ CONTEXT.md README* example_dags/`
+  — все совпадения = текст нового механизма, явно говорящий что `-label:` НЕ
+  используется (hooks/gmail.py:262/410, operators/gmail.py:247/330,
+  sensors/gmail.py:163/212, ADR-0001:54, CONTEXT.md:107, README*:*);
+  устаревших упоминаний старого механизма не осталось (`*.egg-info/PKG-INFO`
+  исключён намеренно)
 
 ### Task 13: [Final] Update documentation
 
