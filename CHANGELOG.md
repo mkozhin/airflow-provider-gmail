@@ -77,8 +77,8 @@ disk). Parsing files is out of scope by design.
   on a missing `gmail.modify` scope. Built-in retry (`execute(num_retries=N)`) for
   Gmail 429/5xx.
 - MIME parsing utilities: recursive attachment walk, inline-image filtering
-  (inline *and* image/`Content-ID`), RFC 2047 decoding of `Subject`/`From`, and
-  untrusted-filename sanitization.
+  (inline *and* (`image/*` or a `Content-ID`)), RFC 2047 decoding of
+  `Subject`/`From`, and untrusted-filename sanitization.
 - Numeric `after:`/`before:` query building over a pure `Window` value object, so
   the search window is computed in the operator timezone and is stable between
   retries (reference day from `data_interval_end`, not `date.today()`).

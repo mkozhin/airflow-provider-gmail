@@ -72,8 +72,6 @@ class FakeGmailHook:
         return self.label_id_to_return
 
     def find_messages_with_attachments(self, query, pattern, exclude_label_id=None):
-        import re
-
         self.exclude_label_id = exclude_label_id
         results = []
         for msg in self._messages:
@@ -272,8 +270,6 @@ def test_query_parity_with_local_operator():
     assert sensor_hook.built_query is not None
     assert op_hook.built_query is not None
     assert sensor_hook.built_query == op_hook.built_query
-    # The dedup is no longer a query term: neither query carries -label:.
-    assert "-label:" not in sensor_hook.built_query
     # The label filter is applied identically in code: both resolve the same
     # processed-label name to the same id and forward it as exclude_label_id.
     assert sensor_hook.find_label_id_calls == ["airflow/processed/avito"]
@@ -319,7 +315,6 @@ def test_poke_mark_processed_true_filters_labelled_message():
     assert _poke(sensor, hook) is False
     assert hook.find_label_id_calls == ["airflow/processed/avito"]
     assert hook.exclude_label_id == "Label_proc"
-    assert "-label:" not in hook.built_query
 
 
 def test_poke_mark_processed_true_but_label_absent_does_not_filter():

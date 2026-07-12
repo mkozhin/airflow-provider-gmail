@@ -196,7 +196,6 @@ def test_mark_processed_true_filters_labelled_message(tmp_path):
     assert hook.find_label_id_calls == ["airflow/processed"]
     assert hook.exclude_label_id == "Label_proc"
     assert hook.downloaded == []
-    assert "-label:" not in hook.built_query
 
 
 def test_mark_processed_true_but_label_absent_does_not_filter(tmp_path):

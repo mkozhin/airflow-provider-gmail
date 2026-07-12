@@ -177,8 +177,10 @@ and `aws_conn_id` (default `"aws_default"`).
 
 - **`GmailAttachmentSensor`** — *"is there a matching email?"* Looks only at
   Gmail; `poke()` → `True` when the search is non-empty. Use it where dedup is
-  guaranteed by Gmail itself (`mark_processed=True`, whose label removes processed
-  mail from the result set) and as the **default sensor for the local operator**.
+  guaranteed by the processed label (`mark_processed=True`): labelled messages
+  stay in Gmail's result set, and the provider filters them out in code by
+  comparing each message's `labelIds` against the processed-label id. It is also
+  the **default sensor for the local operator**.
   When you pair it with the local operator, **set matching `lookback_days` on
   both** (this sensor defaults to `7`, the local operator to `0`); otherwise the
   sensor may fire on a message the operator's narrower window never returns and the

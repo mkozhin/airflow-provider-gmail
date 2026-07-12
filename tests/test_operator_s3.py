@@ -304,7 +304,6 @@ def test_mark_processed_true_never_resolves_or_filters_by_label():
     # S3 policy is False: no label id is resolved and no exclude filter applied.
     assert hook.find_label_id_calls == []
     assert hook.exclude_label_id is None
-    assert "-label:" not in hook.built_query
 
 
 def test_filter_processed_label_is_always_false():

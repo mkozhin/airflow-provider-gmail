@@ -131,6 +131,13 @@ def test_value_with_parens_is_quoted():
     assert q == 'subject:"(a)"'
 
 
+def test_value_with_trailing_newline_is_quoted():
+    # ``\Z`` (not ``$``) anchors the safe pattern, so a trailing newline is not
+    # treated as safe: the value must be quoted, never emitted bare.
+    q = _q(_hook(), subject_contains="foo\n")
+    assert q == 'subject:"foo\n"'
+
+
 def test_email_value_not_quoted():
     q = _q(_hook(), from_email="user@example.com")
     assert q == "from:user@example.com"
@@ -167,7 +174,7 @@ def test_build_query_never_emits_label_term():
         has_attachment=True,
         filename_contains="report",
     )
-    assert "-label:" not in q
+    # ``label:`` covers ``-label:`` too (the latter contains the former).
     assert "label:" not in q
 
 

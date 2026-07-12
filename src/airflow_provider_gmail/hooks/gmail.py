@@ -60,19 +60,22 @@ def _escape(value: str) -> str:
 
 # A value that fully matches this "safe" pattern may be emitted bare; anything
 # else is quoted. ``\w`` is Unicode by default, so single-word Cyrillic
-# ("отчет") still counts as safe and stays unquoted.
-_SAFE_FIELD_VALUE = re.compile(r"^[\w.@+-]+$")
+# ("отчет") still counts as safe and stays unquoted. ``\Z`` (not ``$``) anchors
+# the absolute end of the string, so a value with a trailing newline ("foo\n")
+# is forced into quotes instead of leaking out bare.
+_SAFE_FIELD_VALUE = re.compile(r"^[\w.@+-]+\Z")
 
 
 def _field_value(value: str) -> str:
     """Format a structured-field value: quote when it needs it, escape inside.
 
     A value is emitted bare **only** when it fully matches the safe pattern
-    ``^[\\w.@+-]+$`` (word characters — Unicode, so Cyrillic counts — plus
+    ``^[\\w.@+-]+\\Z`` (word characters — Unicode, so Cyrillic counts — plus
     ``.``, ``@``, ``+`` and ``-``). Anything else, including query
-    metacharacters such as ``:``, ``{}``, ``()`` and whitespace, is wrapped in
-    double quotes so Gmail treats it as a literal rather than parsing it as an
-    operator. Inner ``"`` and ``\\`` are escaped inside the quotes.
+    metacharacters such as ``:``, ``{}``, ``()``, whitespace and a trailing
+    newline, is wrapped in double quotes so Gmail treats it as a literal rather
+    than parsing it as an operator. Inner ``"`` and ``\\`` are escaped inside
+    the quotes.
 
     Known limitation: Gmail does not document backslash-escaping inside quoted
     terms, so :func:`_escape` is best-effort. For the structured search fields
