@@ -23,8 +23,14 @@ from typing import Any
 
 from airflow.sensors.base import BaseSensorOperator
 
-from airflow_provider_gmail.hooks.gmail import GmailHook, resolve_label_name
-from airflow_provider_gmail.operators.gmail import parse_date_range
+from airflow_provider_gmail.hooks.gmail import (
+    GmailHook,
+    MessageWithAttachments,
+    resolve_label_name,
+)
+from airflow_provider_gmail.manifest import Manifest
+from airflow_provider_gmail.operators.gmail import parse_date_range, to_local_date
+from airflow_provider_gmail.utils.paths import manifest_key
 from airflow_provider_gmail.window import Window
 
 
@@ -129,16 +135,17 @@ class GmailAttachmentSensor(BaseSensorOperator):
         """
         return self.mark_processed
 
-    def poke(self, context: Any) -> bool:
-        """``True`` iff Gmail holds at least one matching message.
+    def _find_messages(self, context: Any) -> list[MessageWithAttachments]:
+        """The matching Gmail messages, found through the operator's exact chain.
 
-        Builds the query through the *same* chain the operator's ``execute()``
+        Builds the query through the *same* steps the operator's ``execute()``
         uses — ``data_interval_end`` as the stable reference day, the shared
         :func:`parse_date_range`, :meth:`Window.resolve` and
         :meth:`GmailHook.build_query` — so the sensor searches exactly the set the
         operator will. The sensor is also a window-resolve owner, so it emits the
         same WARNING when an explicit range overrides a non-default
-        ``lookback_days`` (ADR-0004).
+        ``lookback_days`` (ADR-0004). :class:`GmailAttachmentToS3Sensor` reuses
+        this so the storage-aware sensor never diverges from the base query.
         """
         ref_day = context["data_interval_end"]
         label_name = resolve_label_name(self.label_suffix)
@@ -166,7 +173,118 @@ class GmailAttachmentSensor(BaseSensorOperator):
             self.filename_contains,
             self.query,
         )
-        messages = self.hook.find_messages_with_attachments(
-            query, self.attachment_pattern
+        return list(
+            self.hook.find_messages_with_attachments(query, self.attachment_pattern)
         )
-        return bool(messages)
+
+    def poke(self, context: Any) -> bool:
+        """``True`` iff Gmail holds at least one matching message."""
+        return bool(self._find_messages(context))
+
+
+class GmailAttachmentToS3Sensor(GmailAttachmentSensor):
+    """Poke Gmail until there is *new* work to do for the S3 operator.
+
+    Where :class:`GmailAttachmentSensor` answers "is there a matching email",
+    this storage-aware subclass answers "is there *new* work": it discards every
+    matched message that already has a ``_manifest.json`` in S3 and returns
+    ``True`` only if at least one **unprocessed** message remains. It is the
+    natural gate for :class:`GmailAttachmentsToS3Operator` — with
+    ``mark_processed=False`` a processed message stays in the Gmail result set
+    until the ``lookback_days`` window ends, so the Gmail-only sensor would keep
+    firing while the operator behind it honestly skips; this one does not.
+
+    "Processed" is decided by the manifest, never by a Gmail label:
+    :meth:`_filter_processed_label` is ``False`` so ``-label:`` is not mixed into
+    the search (symmetric with the S3 operator — ADR-0001). Each candidate's
+    manifest is looked up at the **same** key the operator writes (the shared
+    :func:`~airflow_provider_gmail.utils.paths.manifest_key`), so sensor and
+    operator can never disagree on where a message's manifest lives.
+
+    A present manifest is not merely detected but **read and validated** through
+    :meth:`Manifest.from_json`: a corrupt / structurally-invalid manifest raises
+    :class:`~airflow_provider_gmail.manifest.ManifestError` and **fails the
+    poke**, rather than silently treating the message as processed — otherwise a
+    damaged manifest would block the message forever with a green sensor
+    (the opposite of the ``ManifestError`` contract; see ``CONTEXT.md``).
+
+    Each ``poke`` repeats the Gmail search and MIME parse and issues one
+    ``check_for_key`` (plus a ``read_key`` on a hit) per candidate; at the
+    intended ``poke_interval`` of ~30 min this cost is negligible, which is
+    exactly why the cheap Gmail-only sensor stays a separate class.
+
+    ``overwrite=True`` is incompatible with this sensor: it would report "no
+    work" for a message that already has a manifest, so the operator behind it
+    would never run. Drive overwrite backfills without this sensor.
+
+    The ``apache-airflow-providers-amazon`` package (the ``s3`` extra) is
+    imported **lazily** inside :meth:`_s3_hook`, so the module still imports —
+    and the Gmail-only :class:`GmailAttachmentSensor` still works — when the
+    extra is not installed.
+    """
+
+    template_fields: Sequence[str] = (
+        *GmailAttachmentSensor.template_fields,
+        "bucket",
+        "prefix",
+    )
+
+    def __init__(
+        self,
+        *,
+        bucket: str,
+        prefix: str = "",
+        aws_conn_id: str = "aws_default",
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.bucket = bucket
+        self.prefix = prefix
+        self.aws_conn_id = aws_conn_id
+        self._cached_s3_hook = None
+
+    def _s3_hook(self):
+        """The cached ``S3Hook``, importing the Amazon provider lazily.
+
+        The import lives here (not at module top level) so ``sensors/gmail.py``
+        remains importable without the ``s3`` extra — the Gmail-only sensor
+        shares this module.
+        """
+        if self._cached_s3_hook is None:
+            from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+
+            self._cached_s3_hook = S3Hook(aws_conn_id=self.aws_conn_id)
+        return self._cached_s3_hook
+
+    def _filter_processed_label(self) -> bool:
+        """Never filter the search by label (ADR-0001): new work is the manifest."""
+        return False
+
+    def _has_processed_manifest(self, msg: MessageWithAttachments) -> bool:
+        """Whether ``msg`` already has a valid manifest at its S3 key.
+
+        Reads and **validates** the manifest through :meth:`Manifest.from_json`;
+        a corrupt manifest raises :class:`ManifestError` (poke fails) instead of
+        being silently counted as processed. The key is built from the shared
+        :func:`manifest_key`, the same join the S3 operator writes.
+        """
+        dt = to_local_date(msg.internal_date, self.timezone).isoformat()
+        key = manifest_key(self.prefix, dt, msg.message_id)
+        hook = self._s3_hook()
+        if not hook.check_for_key(key, bucket_name=self.bucket):
+            return False
+        Manifest.from_json(hook.read_key(key, bucket_name=self.bucket))
+        return True
+
+    def poke(self, context: Any) -> bool:
+        """``True`` iff at least one matched message has no processed manifest.
+
+        Reuses :meth:`GmailAttachmentSensor._find_messages` (identical query to
+        the operator), then drops every candidate whose ``_manifest.json`` is
+        already in S3. A corrupt manifest fails the poke via
+        :class:`ManifestError` — it is never silently treated as processed.
+        """
+        for msg in self._find_messages(context):
+            if not self._has_processed_manifest(msg):
+                return True
+        return False

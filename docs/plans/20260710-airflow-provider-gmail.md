@@ -1228,35 +1228,35 @@ return delivered                                # → XCom: только пис�
 - Modify: `src/airflow_provider_gmail/utils/paths.py` (общая функция ключа, если не создана в Task 9)
 - Create: `tests/test_sensor_s3.py`
 
-- [ ] `GmailAttachmentToS3Sensor(GmailAttachmentSensor)` с `aws_conn_id`, `bucket`,
+- [x] `GmailAttachmentToS3Sensor(GmailAttachmentSensor)` с `aws_conn_id`, `bucket`,
       `prefix`; `template_fields` дополняется `bucket` и `prefix`
-- [ ] **`_filter_processed_label()` переопределён на `False`**: S3-сенсор решает «есть ли
+- [x] **`_filter_processed_label()` переопределён на `False`**: S3-сенсор решает «есть ли
       новая работа» по манифесту, `-label:` в поиск не подмешивает (симметрично
       `GmailAttachmentsToS3Operator`; ADR-0001)
-- [ ] **`S3Hook` импортировать лениво внутри метода** (не top-level), как в
+- [x] **`S3Hook` импортировать лениво внутри метода** (не top-level), как в
       `GmailAttachmentsToS3Operator`: сенсоры Gmail и S3 живут в одном модуле, а
       `apache-airflow-providers-amazon` — опциональная зависимость (extra `s3`); top-level
       импорт сломал бы загрузку Gmail-only `GmailAttachmentSensor` при установке без `[s3]`
-- [ ] `poke()` → `True`, только если среди найденных писем есть хотя бы одно **без**
+- [x] `poke()` → `True`, только если среди найденных писем есть хотя бы одно **без**
       обработанного манифеста в S3 (тот же путь, что строит `GmailAttachmentsToS3Operator`)
-- [ ] **манифест не просто проверяется на существование, а читается и валидируется**
+- [x] **манифест не просто проверяется на существование, а читается и валидируется**
       через `Manifest.from_json` (общий с оператором `_read_manifest`): битый/структурно
       невалидный JSON поднимает `ManifestError` и **валит `poke()`**, а не тихо считает
       письмо обработанным. Иначе повреждённый манифест навсегда заблокировал бы письмо
       без ошибки — противоположность контракту `ManifestError` (см. `CONTEXT.md`)
-- [ ] **общая функция ключа названа и размещена явно**: `s3_object_key(prefix, dt,
+- [x] **общая функция ключа названа и размещена явно**: `s3_object_key(prefix, dt,
       message_id, filename)` (и `manifest_key(...)` для `_manifest.json`) в
       **`src/airflow_provider_gmail/utils/paths.py`** — чистая, без Airflow/S3. Её зовут
       **и** `GmailAttachmentsToS3Operator._destination_path`, **и** этот сенсор; строку
       формата в двух местах не дублировать. Модуль `utils/`, а не `operators/`, чтобы у
       сенсора не возникало зависимости `sensors → operators`
-- [ ] docstring: согласован с `GmailAttachmentsToS3Operator`; на каждом `poke`
+- [x] docstring: согласован с `GmailAttachmentsToS3Operator`; на каждом `poke`
       повторяет поиск и разбор MIME — при `poke_interval=30 мин` это приемлемо
-- [ ] написать тесты: письмо есть, манифеста нет → `True`; письмо есть, валидный манифест
+- [x] написать тесты: письмо есть, манифеста нет → `True`; письмо есть, валидный манифест
       есть → `False`; два письма, у одного манифест → `True`; **битый манифест → `poke`
       падает с `ManifestError`, письмо не «застревает» тихо**; путь манифеста совпадает
       с тем, что строит оператор (общая функция вызвана из обоих)
-- [ ] запустить `pytest` — должен пройти до перехода к задаче 13
+- [x] запустить `pytest` — должен пройти до перехода к задаче 13
 
 ### Task 13: Примеры DAG
 
