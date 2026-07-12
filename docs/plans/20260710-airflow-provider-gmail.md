@@ -769,10 +769,10 @@ return delivered                                # → XCom: только пис�
 - Create: `tests/test_hook_query.py`
 - Create: `tests/test_window.py`
 
-- [ ] `resolve_label_name(suffix) -> str` — `airflow/processed` или
+- [x] `resolve_label_name(suffix) -> str` — `airflow/processed` или
       `airflow/processed/<suffix>`; чистая функция, без обращений к API
       (объявляется здесь, потому что нужна `build_query`; работа с `labelId` — задача 6)
-- [ ] `build_query(window: Window, overwrite, ...)` — **принимает уже разрешённый `Window`**
+- [x] `build_query(window: Window, overwrite, ...)` — **принимает уже разрешённый `Window`**
       (единый контракт с псевдокодом `execute()`: `Window.resolve(...)` вызывает
       оператор/сенсор после рендера дат, `build_query` окно не пересобирает и про таймзоны
       не знает). Метод хука. **Полная сигнатура зафиксирована** (не `...`):
@@ -788,11 +788,11 @@ return delivered                                # → XCom: только пис�
       Склейка `from_email`, `subject_contains`, `has_attachment`, `filename_contains`
       через пробел (AND). `has_attachment=True` → `has:attachment`; `False` (дефолт) →
       терм не добавляется, `-has:attachment` не используем никогда
-- [ ] экранирование значений: оборачивать в кавычки при наличии пробела **и**
+- [x] экранирование значений: оборачивать в кавычки при наличии пробела **и**
       экранировать внутренние `"` и `\`, а не только «значения с пробелами»
-- [ ] сырой `query` имеет приоритет: если задан, структурированные поля игнорируются
+- [x] сырой `query` имеет приоритет: если задан, структурированные поля игнорируются
       (залогировать WARNING, если переданы и то и другое)
-- [ ] **`Window` — чистый value-объект окна поиска** (`window.py`), владеет всей
+- [x] **`Window` — чистый value-объект окна поиска** (`window.py`), владеет всей
       epoch/tz-математикой границ (ADR-0002 + ADR-0004; см. `CONTEXT.md`):
       `Window.resolve(ref_day, timezone, lookback_days, date_from, date_to)` →
       `.after_epoch() -> int | None`, `.before_epoch() -> int | None`. Внутри: выбор
@@ -804,25 +804,25 @@ return delivered                                # → XCom: только пис�
       `date_to` не имеет нижней границы — `after:` тогда не строится вовсе (не подмешивать
       сюда `lookback_days`, он в режиме диапазона игнорируется). В lookback-режиме
       `after_epoch()` всегда `int`
-- [ ] `build_query` **условно** дописывает границы: `after:{w.after_epoch()}` **только
+- [x] `build_query` **условно** дописывает границы: `after:{w.after_epoch()}` **только
       если `after_epoch()` не `None`**, `before:{w.before_epoch()}` — только если не `None`;
       обе — числовым epoch, **не `after:YYYY/MM/DD`** (текстовую дату Gmail трактует в своей
       таймзоне). Про таймзоны/даты `build_query` не знает — вся граница суток заперта в `Window`
-- [ ] диапазон `date_from`/`date_to`: если задан хоть один — `lookback_days`
+- [x] диапазон `date_from`/`date_to`: если задан хоть один — `lookback_days`
       игнорируется. **WARNING (если `lookback_days` был не дефолтным) эмитит
       оператор/сенсор перед вызовом `Window.resolve`, а НЕ `build_query`**: после сборки
       `Window` хук уже не знает ни исходного `lookback_days`, ни того, дефолтный он для
       конкретного оператора (S3 `7` / local `0`). Единственный владелец предупреждения —
       место резолва окна. Диапазон меняет только окно; поля/сырой `query`/`-label:` — ортогональны
-- [ ] `-label:"<label_name>"` подмешивается **только при `filter_processed_label=True`**
+- [x] `-label:"<label_name>"` подмешивается **только при `filter_processed_label=True`**
       (флаг от вызывающего). Хук не смотрит на `mark_processed`/`overwrite`/режим напрямую —
       вся политика (S3→`False`, local→`mark_processed`) вычислена оператором (см. Task 8/10)
-- [ ] написать тесты: только поля; только сырой query; поля + query (query побеждает,
+- [x] написать тесты: только поля; только сырой query; поля + query (query побеждает,
       есть WARNING); кириллица в `subject_contains`; значение с пробелом → в кавычках;
       значение с `"` и `\` → корректно экранировано; `has_attachment` в обоих
       состояниях; **`filter_processed_label=True` → `-label:"<label_name>"` в запросе,
       `False` → его нет** (независимо от прочих полей)
-- [ ] **тесты `Window` в `tests/test_window.py`** (чистые, без хука — вся тонкость
+- [x] **тесты `Window` в `tests/test_window.py`** (чистые, без хука — вся тонкость
       границ живёт здесь):
       - граница суток: `timezone="Europe/Moscow"` → `after_epoch` = полночь МСК, не UTC
       - **выбор дня** (ADR-0002): `ref_day = 2026-07-11 22:00:00+00:00`, МСК → день окна
@@ -833,12 +833,12 @@ return delivered                                # → XCom: только пис�
       - `lookback_days`: `0` → полночь `ref_day`; `1` → предыдущий день; сдвиг на N дней
       - стабильность окна: два `resolve` с одним `ref_day`, но «разными сегодня» →
         одинаковый `after_epoch`
-- [ ] тест `build_query` (`test_hook_query.py`): `after:`/`before:` из `Window` встроены
+- [x] тест `build_query` (`test_hook_query.py`): `after:`/`before:` из `Window` встроены
       в строку запроса; **диапазон только с `date_to` → в запросе есть `before:`, но `after:`
       отсутствует** (окно с `after_epoch() is None`). **WARNING про игнор `lookback_days`
       здесь НЕ проверяется** — он живёт в тесте оператора/сенсора (Task 8/Task 11), где
       резолвится окно
-- [ ] запустить `pytest` — должен пройти до перехода к задаче 5
+- [x] запустить `pytest` — должен пройти до перехода к задаче 5
 
 ### Task 5: GmailHook — поиск и скачивание
 

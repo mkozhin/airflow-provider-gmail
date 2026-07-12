@@ -23,7 +23,44 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
+from airflow_provider_gmail.window import Window
+
 _TOKEN_URI = "https://oauth2.googleapis.com/token"
+
+_LABEL_BASE = "airflow/processed"
+
+
+def resolve_label_name(suffix: str | None) -> str:
+    """Return the full processed-label name — pure, no Gmail API involved.
+
+    ``airflow/processed`` by default, ``airflow/processed/<suffix>`` when a
+    ``label_suffix`` is given. Declared here because :meth:`GmailHook.build_query`
+    needs it for the ``-label:`` term; turning the name into a ``labelId`` (and
+    creating the label) is a later task.
+
+    Nested Gmail labels are **not** hierarchical for search, so the exact string
+    resolved here is both what gets attached and what goes into ``-label:``.
+    """
+    if suffix:
+        return f"{_LABEL_BASE}/{suffix}"
+    return _LABEL_BASE
+
+
+def _escape(value: str) -> str:
+    """Escape inner ``\\`` and ``"`` for use inside a double-quoted Gmail term."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _field_value(value: str) -> str:
+    """Format a structured-field value: quote when it needs it, escape inside.
+
+    A value is wrapped in double quotes when it contains whitespace or a
+    character that must be escaped (``"`` or ``\\``); otherwise it is emitted
+    bare. Escaping of inner ``"`` and ``\\`` always happens inside the quotes.
+    """
+    needs_quote = any(c.isspace() for c in value) or '"' in value or "\\" in value
+    escaped = _escape(value)
+    return f'"{escaped}"' if needs_quote else escaped
 
 _REFRESH_HINT = (
     "Gmail refresh_token was rejected (revoked or expired). Re-issue it by "
@@ -100,6 +137,72 @@ class GmailHook(BaseHook):
         # cache_discovery=False: no file cache, avoids noisy warnings on 3.10+.
         self._service = build("gmail", "v1", credentials=creds, cache_discovery=False)
         return self._service
+
+    def build_query(
+        self,
+        window: Window,
+        filter_processed_label: bool,
+        label_name: str | None,
+        from_email: str | None,
+        subject_contains: str | None,
+        has_attachment: bool,
+        filename_contains: str | None,
+        raw_query: str | None,
+    ) -> str:
+        """Assemble the Gmail search query string.
+
+        The window arrives **already resolved** (:meth:`Window.resolve` is called
+        by the operator/sensor after rendering the dates): this method never
+        rebuilds the window and knows nothing about timezones. It only appends
+        numeric ``after:``/``before:`` when the corresponding bound is not
+        ``None`` — never ``after:YYYY/MM/DD``.
+
+        A raw ``raw_query`` wins: when given, the structured fields
+        (``from_email``, ``subject_contains``, ``has_attachment``,
+        ``filename_contains``) are ignored (two sources of truth are not
+        allowed) and a WARNING is logged if both were supplied. Otherwise the
+        structured fields are ANDed together (space is Gmail's AND).
+
+        ``has_attachment=True`` adds ``has:attachment``; ``False`` adds nothing
+        (``-has:attachment`` is never emitted). ``-label:"<label_name>"`` is
+        added **iff** ``filter_processed_label`` is ``True`` — the caller decides
+        that policy (ADR-0001: S3 always passes ``False`` so the label never
+        filters the search; local passes ``mark_processed``). The hook itself
+        does not look at ``mark_processed``/``overwrite``.
+        """
+        structured_given = any(
+            [from_email, subject_contains, has_attachment, filename_contains]
+        )
+
+        terms: list[str] = []
+        if raw_query:
+            if structured_given:
+                self.log.warning(
+                    "Both a raw 'query' and structured search fields were given; "
+                    "the raw query wins and the structured fields are ignored."
+                )
+            terms.append(raw_query)
+        else:
+            if from_email:
+                terms.append(f"from:{_field_value(from_email)}")
+            if subject_contains:
+                terms.append(f"subject:{_field_value(subject_contains)}")
+            if has_attachment:
+                terms.append("has:attachment")
+            if filename_contains:
+                terms.append(f"filename:{_field_value(filename_contains)}")
+
+        after = window.after_epoch()
+        if after is not None:
+            terms.append(f"after:{after}")
+        before = window.before_epoch()
+        if before is not None:
+            terms.append(f"before:{before}")
+
+        if filter_processed_label and label_name:
+            terms.append(f'-label:"{_escape(label_name)}"')
+
+        return " ".join(terms)
 
     @staticmethod
     def get_connection_form_widgets() -> dict:
