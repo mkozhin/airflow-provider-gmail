@@ -1266,27 +1266,27 @@ return delivered                                # → XCom: только пис�
 - Create: `example_dags/example_gmail_s3_backfill.py`
 - Create: `tests/test_example_dags.py`
 
-- [ ] `example_gmail_to_s3.py`: **`GmailAttachmentToS3Sensor`** → оператор → заглушка
+- [x] `example_gmail_to_s3.py`: **`GmailAttachmentToS3Sensor`** → оператор → заглушка
       парсинга, `mark_processed=False`, `max_active_runs=1` (защита от гонки
       check-then-act при параллельных запусках — с комментарием почему),
       комментарии по каждому параметру.
       Обычный `GmailAttachmentSensor` здесь использовать нельзя: при выключенных
       метках он сработает повторно на уже обработанном письме
-- [ ] `example_gmail_to_local.py`: скачивание → парсинг → уборка (`all_done`),
+- [x] `example_gmail_to_local.py`: скачивание → парсинг → уборка (`all_done`),
       с явным упоминанием ограничения по воркерам и отсутствия идемпотентности
-- [ ] `example_gmail_s3_backfill.py`: переигрывание с `overwrite=True` **без**
+- [x] `example_gmail_s3_backfill.py`: переигрывание с `overwrite=True` **без**
       `GmailAttachmentToS3Sensor` (сенсор увидел бы манифест и не пустил оператор),
       с комментарием, почему сенсор здесь неуместен. **Заполняет `date_from`/`date_to`
       из `dag_run.conf`** (ADR-0004) — ручной триггер с явным диапазоном перекачивает
       ровно нужный период; в комментарии пояснить, что без диапазона окно якорится на
       «сейчас» и старый период не достать
-- [ ] написать тест: `DagBag` загружает `example_dags/` без ошибок импорта
-- [ ] написать **структурные тесты** (импорт без ошибок сам по себе не доказывает
+- [x] написать тест: `DagBag` загружает `example_dags/` без ошибок импорта
+- [x] написать **структурные тесты** (импорт без ошибок сам по себе не доказывает
       гарантий дедупликации): в `example_gmail_to_s3.py` — `max_active_runs == 1`, сенсор
       именно `GmailAttachmentToS3Sensor`; в `example_gmail_s3_backfill.py` — `overwrite=True`
       у оператора **и** отсутствие `GmailAttachmentToS3Sensor` среди задач (иначе backfill
       не тронулся бы с места)
-- [ ] запустить `pytest` — должен пройти до перехода к задаче 14
+- [x] запустить `pytest` — должен пройти до перехода к задаче 14
 
 ### Task 14: README (documentation gate — без новых unit-тестов)
 
