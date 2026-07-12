@@ -73,7 +73,13 @@ with DAG(
 
     def _cleanup(**context):
         """Remove the downloaded files. Cleanup is the DAG's job, not the
-        operator's — the operator does not care what happens to the files."""
+        operator's — the operator does not care what happens to the files.
+
+        Note: this wipes the WHOLE base path (every ``dt=`` partition under
+        ``LOCAL_PATH``), not just this run's partition. That is fine here because
+        the base path is dedicated to this DAG and each run parses before cleanup;
+        scope the rmtree to the run's ``dt=`` subdirectory if you share the path.
+        """
         shutil.rmtree(LOCAL_PATH, ignore_errors=True)
         print(f"cleaned up {LOCAL_PATH}")
 

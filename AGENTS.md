@@ -28,8 +28,12 @@ pip install -e ".[dev,s3]" --constraint \
 
 - Full test suite: `pytest` (the `packaging` marker is deselected by default)
 - Coverage: `pytest --cov=airflow_provider_gmail --cov-report=term-missing`
-- Packaging smoke test (build → wheel → `ProvidersManager`): `pytest -m packaging`
-  — run it explicitly whenever you touch packaging
+- Packaging smoke test (build → wheel → `ProvidersManager`): `pytest -m packaging`.
+  First install the build tooling **unconstrained** — the Airflow 2.9.1
+  constraints pin `twine==5.0.0`/`packaging==24.0`, which reject the wheel's PEP
+  639 Metadata 2.4 (and `twine>=6.1` is unsatisfiable under them):
+  `pip install --upgrade build "twine>=6.1" "packaging>=24.2"` (the `packaging`
+  extra). Run it explicitly whenever you touch packaging.
 
 ## Domain language
 

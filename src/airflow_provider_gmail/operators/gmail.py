@@ -2,15 +2,12 @@
 
 This module carries the storage-agnostic interface shared by the S3 and local
 operators (ADR-0006: the storage seam stays inheritance, no ``Destination``
-port) plus the pure helpers that the ``execute()`` orchestration (Task 8) and
-the sensor ``poke()`` (Task 11) both reuse so the two never drift:
-
-- :func:`parse_date_range` — parse/validate the ``date_from``/``date_to`` range;
-- :func:`resolve_collisions` — sanitize names and resolve intra-message name
-  collisions with a suffix, tracking the occupied set;
-- :func:`to_local_date` / :func:`to_local_iso` — the ``dt=`` partition date and
-  the manifest ``internal_date``, both over one epoch→aware-datetime conversion
-  so path and manifest can never disagree.
+port). The pure date helpers (:func:`parse_date_range`, :func:`to_local_date`,
+:func:`to_local_iso`) live in :mod:`airflow_provider_gmail.dates` so the sensors
+can reuse them without importing this operator module; they are re-exported here
+for the ``execute()`` orchestration (Task 8). :func:`resolve_collisions`
+(sanitize names and resolve intra-message name collisions with a suffix) stays
+here — it is an operator concern, not a shared date helper.
 
 The base class declares the three storage-seam methods (:meth:`_write`,
 :meth:`_destination_path`, :meth:`_read_manifest`) and the label-filter policy
@@ -32,75 +29,36 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Iterable, Sequence
-from datetime import date, datetime
 from functools import cached_property
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from airflow.exceptions import AirflowSkipException
 from airflow.models import BaseOperator
 
+# Re-exported so ``execute()`` and existing callers can reach them here; the
+# canonical home is ``airflow_provider_gmail.dates`` (see module docstring).
+from airflow_provider_gmail.dates import (
+    parse_date_range,
+    to_local_date,
+    to_local_iso,
+    validate_lookback_days,
+    validate_timezone,
+)
 from airflow_provider_gmail.hooks.gmail import GmailHook, resolve_label_name
 from airflow_provider_gmail.manifest import Decision, FileEntry, Manifest, decide
 from airflow_provider_gmail.utils.mime import Attachment, sanitize_filename
+from airflow_provider_gmail.utils.paths import MANIFEST_FILENAME, s3_key
 from airflow_provider_gmail.window import Window
 
-
-def parse_date_range(
-    date_from: str | None, date_to: str | None
-) -> tuple[date | None, date | None]:
-    """Parse and validate an explicit ``date_from``/``date_to`` range.
-
-    Both bounds are optional ISO ``YYYY-MM-DD`` strings (typically rendered from
-    ``dag_run.conf``). Returns a ``(date | None, date | None)`` pair. Raises
-    :class:`ValueError` on a malformed ISO string or a reversed range
-    (``date_from > date_to``).
-
-    Shared by ``execute()`` (Task 8) and the sensor ``poke()`` (Task 11) so the
-    parse never diverges between operator and sensor.
-    """
-    parsed_from = _parse_iso_date(date_from, "date_from")
-    parsed_to = _parse_iso_date(date_to, "date_to")
-    if parsed_from is not None and parsed_to is not None and parsed_from > parsed_to:
-        raise ValueError(
-            f"date_from ({parsed_from.isoformat()}) must be on or before "
-            f"date_to ({parsed_to.isoformat()})"
-        )
-    return parsed_from, parsed_to
-
-
-def _parse_iso_date(value: str | None, field: str) -> date | None:
-    if value is None:
-        return None
-    try:
-        return date.fromisoformat(value)
-    except (ValueError, TypeError) as exc:
-        raise ValueError(
-            f"{field} must be an ISO date (YYYY-MM-DD), got {value!r}"
-        ) from exc
-
-
-def _to_aware_datetime(internal_date: str, timezone: str) -> datetime:
-    """Convert a Gmail ``internalDate`` to an aware datetime in ``timezone``.
-
-    ``internalDate`` arrives as a **string** holding epoch **milliseconds**;
-    both :func:`to_local_date` and :func:`to_local_iso` go through this single
-    conversion so the ``dt=`` partition date and the manifest ISO can never
-    disagree. The zone always comes from the ``timezone`` argument — no
-    hard-coded MSK.
-    """
-    epoch_ms = int(internal_date)
-    return datetime.fromtimestamp(epoch_ms / 1000, tz=ZoneInfo(timezone))
-
-
-def to_local_date(internal_date: str, timezone: str) -> date:
-    """The calendar date of ``internal_date`` in ``timezone`` (the ``dt=`` partition)."""
-    return _to_aware_datetime(internal_date, timezone).date()
-
-
-def to_local_iso(internal_date: str, timezone: str) -> str:
-    """ISO 8601 string of ``internal_date`` in ``timezone`` (manifest ``internal_date``)."""
-    return _to_aware_datetime(internal_date, timezone).isoformat()
+__all__ = [
+    "GmailAttachmentsBaseOperator",
+    "GmailAttachmentsToS3Operator",
+    "GmailAttachmentsToLocalOperator",
+    "parse_date_range",
+    "resolve_collisions",
+    "to_local_date",
+    "to_local_iso",
+]
 
 
 def resolve_collisions(
@@ -116,10 +74,17 @@ def resolve_collisions(
     ``report.xlsx``, ``report_1.xlsx`` yield three distinct names rather than the
     second colliding with the real third.
 
+    The manifest filename (:data:`MANIFEST_FILENAME`) is seeded as already-taken
+    so no attachment can be assigned ``_manifest.json`` — otherwise an attachment
+    sanitizing to that name would be written to the same key the per-message
+    manifest is written to **last**, silently overwriting the attachment (data
+    loss, ADR-0001: a delivered path must point at the actual attachment). Such an
+    attachment becomes ``_manifest_1.json`` instead.
+
     Returns ``(attachment, safe_name)`` pairs. The :class:`Attachment` is **not**
     mutated (it has no ``safe_name`` field — see Task 2).
     """
-    occupied: set[str] = set()
+    occupied: set[str] = {MANIFEST_FILENAME}
     resolved: list[tuple[Attachment, str]] = []
     for index, attachment in enumerate(attachments, start=1):
         base = sanitize_filename(attachment.filename, f"attachment_{index}")
@@ -202,18 +167,10 @@ class GmailAttachmentsBaseOperator(BaseOperator):
     ) -> None:
         super().__init__(**kwargs)
 
-        if lookback_days < 0:
-            raise ValueError(
-                f"lookback_days must be >= 0 (0 means 'today only'), "
-                f"got {lookback_days}"
-            )
-
-        # Validate the timezone eagerly: an unknown zone must fail at DAG parse,
-        # not deep inside a run. The string is kept — the helpers build ZoneInfo.
-        try:
-            ZoneInfo(timezone)
-        except Exception as exc:
-            raise ValueError(f"unknown timezone {timezone!r}: {exc}") from exc
+        # Reject negative lookback and an unknown timezone eagerly so bad config
+        # fails at DAG parse, not deep inside a run (shared with the sensor).
+        validate_lookback_days(lookback_days)
+        validate_timezone(timezone)
 
         # Compile the pattern in __init__ so a bad regex fails at DAG parse
         # (ADR-0005). It is NOT templated: a rendered template would otherwise
@@ -295,7 +252,7 @@ class GmailAttachmentsBaseOperator(BaseOperator):
         self,
         rel_dir: str,
         message_id: str,
-        internal_date: str,
+        internal_date: int,
         subject: str,
         from_: str,
         files: list[FileEntry],
@@ -371,7 +328,7 @@ class GmailAttachmentsBaseOperator(BaseOperator):
         delivered: list[str] = []
         to_label: list[str] = []
         for msg in self.hook.find_messages_with_attachments(
-            query, self.attachment_pattern
+            query, self._compiled_pattern
         ):
             dt = to_local_date(msg.internal_date, self.timezone)
             rel_dir = f"dt={dt}/{msg.message_id}"
@@ -499,12 +456,6 @@ class GmailAttachmentsToS3Operator(GmailAttachmentsBaseOperator):
             self._cached_s3_hook = S3Hook(aws_conn_id=self.aws_conn_id)
         return self._cached_s3_hook
 
-    @staticmethod
-    def _split_rel_dir(rel_dir: str) -> tuple[str, str]:
-        """Split ``dt=<dt>/<message_id>`` into ``(dt, message_id)``."""
-        dt_segment, message_id = rel_dir.split("/", 1)
-        return dt_segment.removeprefix("dt="), message_id
-
     def _write(self, rel_path: str, data: bytes) -> None:
         """Write ``data`` to its S3 key with ``replace=True``.
 
@@ -514,30 +465,35 @@ class GmailAttachmentsToS3Operator(GmailAttachmentsBaseOperator):
         the manifest, so the byte write never needs to hesitate.
         """
         self._s3_hook().load_bytes(
-            data, key=self._destination_path(rel_path), bucket_name=self.bucket, replace=True
+            data,
+            key=self._destination_path(rel_path),
+            bucket_name=self.bucket,
+            replace=True,
         )
 
     def _destination_path(self, rel_path: str) -> str:
-        """The S3 object key of ``rel_path`` via the shared :func:`s3_object_key`."""
-        from airflow_provider_gmail.utils.paths import s3_object_key
+        """The S3 object key of ``rel_path``: ``<prefix>`` joined onto ``rel_path``.
 
-        dt_dir, filename = rel_path.rsplit("/", 1)
-        dt, message_id = self._split_rel_dir(dt_dir)
-        return s3_object_key(self.prefix, dt, message_id, filename)
+        ``rel_path`` already carries the ``dt=<dt>/<message_id>/...`` layout the
+        base class composed, so the key is a straight :func:`s3_key` — no
+        decompose-then-recompose of the ``dt=`` segment. :func:`s3_key` guards
+        the 1024-byte whole-key limit (a long ``prefix`` can push a filename that
+        fits the 255-byte component cap over it), failing fast instead of letting
+        S3 stall on every retry.
+        """
+        return s3_key(self.prefix, rel_path)
 
     def _read_manifest(self, rel_dir: str) -> Manifest | None:
         """Read + parse the manifest under ``rel_dir``, or ``None`` when absent.
 
-        Uses the shared :func:`manifest_key` join (so operator and sensor agree on
-        where the manifest lives) with ``check_for_key`` + ``read_key``.
-        ``S3Hook.read_key`` returns ``str`` (decoded), which
-        :meth:`Manifest.from_json` accepts; validation / ``ManifestError`` live in
-        the manifest module, not here.
+        The key is ``<prefix>/<rel_dir>/_manifest.json`` via the same
+        :func:`s3_key` the writes use (so operator and sensor agree on where the
+        manifest lives, and the 1024-byte whole-key limit is enforced here too),
+        with ``check_for_key`` + ``read_key``. ``S3Hook.read_key`` returns ``str``
+        (decoded), which :meth:`Manifest.from_json` accepts; validation /
+        ``ManifestError`` live in the manifest module, not here.
         """
-        from airflow_provider_gmail.utils.paths import manifest_key
-
-        dt, message_id = self._split_rel_dir(rel_dir)
-        key = manifest_key(self.prefix, dt, message_id)
+        key = s3_key(self.prefix, rel_dir, MANIFEST_FILENAME)
         hook = self._s3_hook()
         if not hook.check_for_key(key, bucket_name=self.bucket):
             return None

@@ -18,11 +18,8 @@ import pytest
 
 from airflow_provider_gmail.hooks.gmail import GmailHook, MessageWithAttachments
 from airflow_provider_gmail.manifest import Manifest, ManifestError
-from airflow_provider_gmail.operators.gmail import (
-    GmailAttachmentsToS3Operator,
-    to_local_date,
-    to_local_iso,
-)
+from airflow_provider_gmail.dates import to_local_date, to_local_iso
+from airflow_provider_gmail.operators.gmail import GmailAttachmentsToS3Operator
 from airflow_provider_gmail.sensors.gmail import GmailAttachmentToS3Sensor
 from airflow_provider_gmail.utils.mime import Attachment
 from airflow_provider_gmail.utils.paths import manifest_key
@@ -175,6 +172,20 @@ def test_module_imports_without_touching_s3hook():
     assert sensor._cached_s3_hook is None
 
 
+def test_s3_hook_lazily_constructs_real_hook_with_aws_conn_id():
+    # Exercise the real lazy import path: _s3_hook() builds a real S3Hook bound
+    # to the configured aws_conn_id.
+    sensor = GmailAttachmentToS3Sensor(
+        task_id="s", source="avito", bucket=BUCKET, aws_conn_id="custom_aws"
+    )
+    hook = sensor._s3_hook()
+    from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+
+    assert isinstance(hook, S3Hook)
+    assert hook.aws_conn_id == "custom_aws"
+    assert sensor._s3_hook() is hook  # cached
+
+
 # -- poke: new work vs processed ---------------------------------------------
 
 
@@ -245,6 +256,25 @@ def test_structurally_invalid_manifest_raises_manifest_error():
     store[_manifest_key(msg)] = b'{"source": "avito"}'
     sensor = _make_sensor(store)
     with pytest.raises(ManifestError):
+        _poke(sensor, FakeGmailHook([msg]))
+
+
+# -- over-limit key fails fast with the same clear ValueError ----------------
+
+
+def test_poke_raises_valueerror_when_manifest_key_exceeds_s3_limit():
+    """A huge prefix pushing the manifest key over 1024 bytes fails fast.
+
+    The sensor's manifest lookup goes through the same guarded key builder the
+    S3 operator uses, so it raises a clear :class:`ValueError` (naming the byte
+    count and the S3 limit) instead of letting an over-limit key reach S3 and
+    produce a cryptic backend validation error.
+    """
+    store: dict = {}
+    msg = _message("msg1", "a.xlsx")
+    huge_prefix = "p" * 1100  # alone already over the 1024-byte whole-key cap
+    sensor = _make_sensor(store, prefix=huge_prefix)
+    with pytest.raises(ValueError, match="1024"):
         _poke(sensor, FakeGmailHook([msg]))
 
 

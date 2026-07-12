@@ -67,6 +67,7 @@ def _field_value(value: str) -> str:
     escaped = _escape(value)
     return f'"{escaped}"' if needs_quote else escaped
 
+
 def _b64url_decode(data: str) -> bytes:
     """Decode a base64url attachment body, fixing up missing ``=`` padding.
 
@@ -89,12 +90,16 @@ class MessageWithAttachments:
     ``attachments`` that matched ``attachment_pattern``. Holding these here keeps
     the operator out of the raw ``payload`` so the MIME parsing lives in one
     place.
+
+    ``subject``/``from_`` are always ``str`` — a message missing the header
+    coalesces to ``""`` (not ``None``) so the manifest never serializes a JSON
+    ``null`` where the layer-2 schema types a string.
     """
 
     message_id: str
     internal_date: int
-    subject: str | None
-    from_: str | None
+    subject: str
+    from_: str
     attachments: list[Attachment]
 
 
@@ -188,13 +193,20 @@ class GmailHook(BaseHook):
                 "(see the provider README)."
             )
 
+        # The 'scopes' extra is reference-only documentation (see the Connection
+        # form label) and is deliberately NOT passed to Credentials. A
+        # refresh_token grant reuses exactly the scopes granted at consent, so
+        # the field cannot widen or narrow rights. More importantly, google-auth
+        # treats `scopes` as an *iterable of scope strings*: handing it the UI
+        # string would iterate it character-by-character into bogus per-char
+        # scopes and break the refresh grant. The field stays visible in the UI
+        # purely as documentation.
         creds = Credentials(
             token=None,
             refresh_token=refresh_token,
             client_id=conn.login,
             client_secret=conn.password,
             token_uri=_TOKEN_URI,
-            scopes=extra.get("scopes"),
         )
         try:
             creds.refresh(Request())
@@ -320,27 +332,40 @@ class GmailHook(BaseHook):
 
         The body arrives two ways: usually as ``attachment_id`` (fetched with a
         separate ``attachments.get`` call), but small attachments may inline the
-        base64url body in ``data``. The choice is made on the **presence** of
-        ``data`` (``attachment.data is not None``), not its truthiness — an empty
-        file legitimately yields ``data == ""``. One attachment loads whole into
-        memory; Gmail caps incoming messages at 25 MB, so the upper bound is
-        known.
-        """
-        if attachment.data is not None:
-            return _b64url_decode(attachment.data)
+        base64url body in ``data``. **The ``attachment_id`` wins**: whenever it is
+        present (non-empty), the real bytes are fetched via ``attachments.get`` —
+        even if the part *also* carries ``data == ""``. Preferring the inline
+        ``data`` there would write a silent zero-byte file and a "successful"
+        manifest, which later runs would dedup permanently and never re-fetch
+        (data loss). Only when there is **no** usable ``attachment_id`` do we
+        decode the inline ``data`` — which may legitimately be ``""`` for a
+        genuinely empty inline file (recognized by :func:`iter_attachments` on
+        key presence, not truthiness), decoding to ``b""`` and still delivered.
 
-        service = self.get_conn()
-        request = (
-            service.users()
-            .messages()
-            .attachments()
-            .get(userId=self.user_id, messageId=message_id, id=attachment.attachment_id)
-        )
-        response = self._execute(request)
-        return _b64url_decode(response["data"])
+        One attachment loads whole into memory; Gmail caps incoming messages at
+        25 MB, so the upper bound is known.
+        """
+        if attachment.attachment_id:
+            service = self.get_conn()
+            request = (
+                service.users()
+                .messages()
+                .attachments()
+                .get(
+                    userId=self.user_id,
+                    messageId=message_id,
+                    id=attachment.attachment_id,
+                )
+            )
+            response = self._execute(request)
+            return _b64url_decode(response["data"])
+
+        # No usable attachment_id: the body is inlined in `data` (guaranteed
+        # present by iter_attachments when attachmentId is absent; possibly "").
+        return _b64url_decode(attachment.data or "")
 
     def find_messages_with_attachments(
-        self, query: str, pattern: str | None
+        self, query: str, pattern: str | re.Pattern[str] | None
     ) -> list[MessageWithAttachments]:
         """Search, fetch, walk the MIME tree and keep the matching attachments.
 
@@ -380,8 +405,10 @@ class GmailHook(BaseHook):
                 MessageWithAttachments(
                     message_id=message_id,
                     internal_date=int(message["internalDate"]),
-                    subject=header(payload, "Subject"),
-                    from_=header(payload, "From"),
+                    # Coalesce a missing header to "" (not None) so the manifest
+                    # serializes a string, matching the layer-2 schema.
+                    subject=header(payload, "Subject") or "",
+                    from_=header(payload, "From") or "",
                     attachments=matched,
                 )
             )

@@ -853,8 +853,11 @@ return delivered                                # → XCom: только пис�
       результате ключа нет
 - [x] `get_message(message_id) -> dict` — `users.messages.get(userId=..., format="full")`
 - [x] `download_attachment(message_id, attachment) -> bytes` — если у вложения есть
-      `data`, декодировать её; иначе `users.messages.attachments.get(userId=..., ...)`
-      по `attachment_id`; в обоих случаях `base64.urlsafe_b64decode` с добивкой padding
+      `attachment_id`, фетчить `users.messages.attachments.get(userId=..., ...)` по нему;
+      инлайновую `data` (которая может быть `""`) декодировать только когда `attachment_id`
+      отсутствует; в обоих случаях `base64.urlsafe_b64decode` с добивкой padding.
+      Порядок именно такой (attachment_id вперёд): часть может нести и `attachmentId`,
+      и `data == ""` одновременно — при data-first это молча писало бы 0-байтный файл
 - [x] `find_messages_with_attachments(query, pattern) -> list[MessageWithAttachments]` —
       **единственное место**, где живут поиск, `get_message`, `iter_attachments`, отбор
       по паттерну и INFO-лог «не наше письмо». Им пользуются и оператор, и оба сенсора;

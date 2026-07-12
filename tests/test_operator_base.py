@@ -10,6 +10,7 @@ storage seam.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -27,13 +28,14 @@ from airflow_provider_gmail.operators.gmail import (
     to_local_iso,
 )
 from airflow_provider_gmail.utils.mime import Attachment
+from airflow_provider_gmail.utils.paths import MANIFEST_FILENAME
 
 MSK = "Europe/Moscow"
 
 
-def _epoch_ms(dt: datetime) -> str:
-    """Gmail ``internalDate`` string (epoch milliseconds) for an aware datetime."""
-    return str(int(dt.timestamp() * 1000))
+def _epoch_ms(dt: datetime) -> int:
+    """Gmail ``internalDate`` (epoch milliseconds) as the hook hands it on — an int."""
+    return int(dt.timestamp() * 1000)
 
 
 def _attachment(filename: str) -> Attachment:
@@ -121,6 +123,45 @@ def test_resolve_collisions_returns_pairs_with_attachment():
     a = _attachment("report.xlsx")
     resolved = resolve_collisions([a])
     assert resolved[0][0] is a
+
+
+def test_resolve_collisions_two_extensionless_names():
+    # No extension: the suffix is appended to the whole name (no ".").
+    atts = [_attachment("README"), _attachment("README")]
+    names = [name for _, name in resolve_collisions(atts)]
+    assert names == ["README", "README_1"]
+
+
+def test_resolve_collisions_multi_increment_when_candidate_occupied():
+    # The first free suffix must skip an already-occupied "_1" candidate.
+    atts = [
+        _attachment("report.xlsx"),
+        _attachment("report_1.xlsx"),
+        _attachment("report.xlsx"),
+    ]
+    names = [name for _, name in resolve_collisions(atts)]
+    assert names == ["report.xlsx", "report_1.xlsx", "report_2.xlsx"]
+    assert len(set(names)) == 3
+
+
+def test_resolve_collisions_reserves_manifest_filename():
+    # An attachment sanitizing to the manifest filename must never be assigned
+    # _manifest.json — that key is written LAST by the manifest, which would
+    # silently overwrite the attachment (data loss, ADR-0001).
+    resolved = resolve_collisions([_attachment(MANIFEST_FILENAME)])
+    names = [name for _, name in resolved]
+    assert names == ["_manifest_1.json"]
+    assert MANIFEST_FILENAME not in names
+
+
+def test_resolve_collisions_two_manifest_named_both_avoid_reserved():
+    # Two attachments both named _manifest.json avoid the reserved name and each
+    # other, yielding two distinct suffixed names.
+    atts = [_attachment(MANIFEST_FILENAME), _attachment(MANIFEST_FILENAME)]
+    names = [name for _, name in resolve_collisions(atts)]
+    assert names == ["_manifest_1.json", "_manifest_2.json"]
+    assert MANIFEST_FILENAME not in names
+    assert len(set(names)) == 2
 
 
 # -- parse_date_range --------------------------------------------------------
@@ -399,6 +440,24 @@ def test_execute_writes_manifest_last():
     assert result == ["s3://bucket/dt=2026-07-12/msg1/_manifest.json"]
 
 
+def test_execute_attachment_named_manifest_not_overwritten_by_manifest():
+    # An attachment literally named _manifest.json must land under a suffixed key
+    # and the real manifest must still be written — the manifest never clobbers
+    # the attachment, and its files[].path points at the suffixed key (ADR-0001).
+    op = _DictOperator(task_id="t", source="avito")
+    hook = _FakeHook([_message("msg1", MANIFEST_FILENAME)])
+    result = _run(op, hook)
+
+    attachment_key = "dt=2026-07-12/msg1/_manifest_1.json"
+    manifest_key = "dt=2026-07-12/msg1/_manifest.json"
+    # Both keys exist and are distinct: the attachment survived.
+    assert op.store[attachment_key] == b"bytes-of-_manifest.json"
+    manifest = Manifest.from_json(op.store[manifest_key])
+    assert [f.path for f in manifest.files] == [f"s3://bucket/{attachment_key}"]
+    assert [f.name for f in manifest.files] == [MANIFEST_FILENAME]
+    assert result == [f"s3://bucket/{manifest_key}"]
+
+
 def test_execute_not_our_email_writes_no_manifest_and_no_label():
     # The hook already drops "not our email" (no attachment matched), so from the
     # operator's view it simply returns nothing: no writes, no label, and a skip.
@@ -417,14 +476,25 @@ def test_execute_empty_search_skips():
         _run(op, hook)
 
 
-def test_execute_passes_attachment_pattern_to_hook():
+def test_execute_passes_compiled_attachment_pattern_to_hook():
+    # execute() passes the COMPILED pattern (validation is load-bearing), not the
+    # raw string, so the __init__-time re.compile is what actually filters.
     op = _DictOperator(
         task_id="t", source="avito", attachment_pattern=r"\.xlsx$"
     )
     hook = _FakeHook([])
     with pytest.raises(AirflowSkipException):
         _run(op, hook)
-    assert hook.search_pattern == r"\.xlsx$"
+    assert isinstance(hook.search_pattern, re.Pattern)
+    assert hook.search_pattern.pattern == r"\.xlsx$"
+
+
+def test_execute_passes_none_pattern_when_unset():
+    op = _DictOperator(task_id="t", source="avito")
+    hook = _FakeHook([])
+    with pytest.raises(AirflowSkipException):
+        _run(op, hook)
+    assert hook.search_pattern is None
 
 
 # -- date-range validation after render (ADR-0004) --------------------------

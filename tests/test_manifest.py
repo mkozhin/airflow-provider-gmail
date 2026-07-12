@@ -165,6 +165,30 @@ def test_files_element_not_object_raises_manifest_error():
         Manifest.from_json(json.dumps(data))
 
 
+@pytest.mark.parametrize(
+    "key",
+    ["source", "message_id", "internal_date", "subject", "from", "run_id"],
+)
+@pytest.mark.parametrize("bad", [123, None, 3.5, {"x": 1}, ["a"]])
+def test_scalar_field_wrong_type_raises_manifest_error(key, bad):
+    # A present-but-mistyped scalar (run_id as int, subject as number, from as
+    # null, ...) must fail loudly rather than be accepted as a valid past-run
+    # manifest and silently skip the message.
+    data = json.loads(json.dumps(LAYER2_SCHEMA))
+    data[key] = bad
+    with pytest.raises(ManifestError):
+        Manifest.from_json(json.dumps(data))
+
+
+@pytest.mark.parametrize("key", ["name", "path"])
+@pytest.mark.parametrize("bad", [123, None, 3.5, {"x": 1}])
+def test_file_string_field_wrong_type_raises_manifest_error(key, bad):
+    data = json.loads(json.dumps(LAYER2_SCHEMA))
+    data["files"][0][key] = bad
+    with pytest.raises(ManifestError):
+        Manifest.from_json(json.dumps(data))
+
+
 def test_size_wrong_type_raises_manifest_error():
     data = json.loads(json.dumps(LAYER2_SCHEMA))
     data["files"][0]["size"] = "148223"
@@ -187,6 +211,13 @@ def test_size_bool_raises_manifest_error():
         '{"files": []}',
         '{"source": 1, "message_id": 2, "internal_date": 3, "subject": 4, '
         '"from": 5, "run_id": 6, "files": "nope"}',
+        # Mistyped scalars but a structurally valid files list: must still be a
+        # clean ManifestError, not a leaked TypeError at dataclass construction.
+        '{"source": 1, "message_id": "m", "internal_date": "d", "subject": "s", '
+        '"from": "f", "run_id": "r", "files": [{"name": "n", "size": 1, "path": "p"}]}',
+        # File path as null (JSON null) with everything else valid.
+        '{"source": "s", "message_id": "m", "internal_date": "d", "subject": "s", '
+        '"from": "f", "run_id": "r", "files": [{"name": "n", "size": 1, "path": null}]}',
     ],
 )
 def test_no_low_level_exception_leaks(raw):

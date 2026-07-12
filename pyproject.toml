@@ -37,8 +37,17 @@ dev = [
     "google-auth-oauthlib",
     "pytest",
     "pytest-cov",
+]
+# Build/publish + packaging-smoke-test tooling. Kept OUT of `dev` and installed
+# WITHOUT the Airflow 2.9.1 constraints file on purpose: those constraints pin
+# twine==5.0.0 / packaging==24.0, which reject the wheel's PEP 639 Metadata 2.4
+# and make `twine check` fail. `twine>=6.1` is unsatisfiable under the pinned
+# twine==5.0.0, so this must never be resolved against the constraints (see
+# publish.yml and the `packaging` CI job — both install it unconstrained).
+packaging = [
     "build",
-    "twine",
+    "twine>=6.1",
+    "packaging>=24.2",
 ]
 
 [project.urls]

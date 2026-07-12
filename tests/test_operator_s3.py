@@ -19,13 +19,10 @@ from airflow.exceptions import AirflowSkipException
 
 from airflow_provider_gmail.hooks.gmail import GmailHook, MessageWithAttachments
 from airflow_provider_gmail.manifest import Manifest, ManifestError
-from airflow_provider_gmail.operators.gmail import (
-    GmailAttachmentsToS3Operator,
-    to_local_date,
-    to_local_iso,
-)
+from airflow_provider_gmail.dates import to_local_date, to_local_iso
+from airflow_provider_gmail.operators.gmail import GmailAttachmentsToS3Operator
 from airflow_provider_gmail.utils.mime import Attachment
-from airflow_provider_gmail.utils.paths import manifest_key, s3_object_key
+from airflow_provider_gmail.utils.paths import join_key, manifest_key, message_dir
 
 MSK = "Europe/Moscow"
 BUCKET = "my-bucket"
@@ -142,7 +139,7 @@ def _manifest_key(msg: MessageWithAttachments, prefix: str = PREFIX) -> str:
 
 
 def _file_key(msg, filename, prefix: str = PREFIX) -> str:
-    return s3_object_key(prefix, _dt(msg), msg.message_id, filename)
+    return join_key(message_dir(prefix, _dt(msg), msg.message_id), filename)
 
 
 def _seed_manifest(store: dict, msg, run_id: str, prefix: str = PREFIX) -> None:
@@ -191,6 +188,20 @@ def test_module_imports_without_reference_to_s3hook_at_top_level():
     assert op._cached_s3_hook is None
 
 
+def test_s3_hook_lazily_constructs_real_hook_with_aws_conn_id():
+    # Exercise the real lazy import path (not just the None cache): _s3_hook()
+    # must build a real S3Hook bound to the configured aws_conn_id.
+    op = GmailAttachmentsToS3Operator(
+        task_id="t", source="avito", bucket=BUCKET, aws_conn_id="custom_aws"
+    )
+    hook = op._s3_hook()
+    from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+
+    assert isinstance(hook, S3Hook)
+    assert hook.aws_conn_id == "custom_aws"
+    assert op._s3_hook() is hook  # cached
+
+
 # -- dedup tri-state ---------------------------------------------------------
 
 
@@ -229,6 +240,31 @@ def test_no_manifest_downloads_and_delivers_with_expected_key_structure():
     assert _file_key(msg, "a.xlsx") in store
     assert _file_key(msg, "a.xlsx") == "gmail/avito/dt=2026-07-12/msg1/a.xlsx"
     assert _manifest_key(msg) in store
+    # the manifest's files[].path is exactly the attachment's object key
+    manifest = Manifest.from_json(store[_manifest_key(msg)])
+    assert [f.path for f in manifest.files] == [_file_key(msg, "a.xlsx")]
+
+
+def test_empty_attachment_yields_zero_byte_object_and_size_zero_manifest():
+    # data == "" is a legitimate 0-byte attachment: it must produce a 0-byte S3
+    # object and a manifest entry with size 0, not be skipped.
+    store: dict = {}
+    msg = _message("msg1", "empty.txt")
+
+    class _EmptyHook(FakeGmailHook):
+        def download_attachment(self, message_id, attachment) -> bytes:
+            self.downloaded.append((message_id, attachment.filename))
+            return b""
+
+    op = _make_op(store)
+    hook = _EmptyHook([msg])
+    result = _run(op, hook)
+
+    assert result == [_manifest_key(msg)]
+    file_key = _file_key(msg, "empty.txt")
+    assert store[file_key] == b""  # 0-byte object written
+    manifest = Manifest.from_json(store[_manifest_key(msg)])
+    assert [(f.name, f.size) for f in manifest.files] == [("empty.txt", 0)]
 
 
 def test_overwrite_true_forces_download_despite_current_manifest():

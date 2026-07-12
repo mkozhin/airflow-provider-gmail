@@ -20,10 +20,8 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from airflow_provider_gmail.hooks.gmail import GmailHook, MessageWithAttachments
-from airflow_provider_gmail.operators.gmail import (
-    GmailAttachmentsToLocalOperator,
-    to_local_date,
-)
+from airflow_provider_gmail.dates import to_local_date
+from airflow_provider_gmail.operators.gmail import GmailAttachmentsToLocalOperator
 from airflow_provider_gmail.utils.mime import Attachment
 
 MSK = "Europe/Moscow"

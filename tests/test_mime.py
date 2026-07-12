@@ -106,6 +106,42 @@ def test_sanitize_decodes_encoded_word_defensively():
     assert sanitize_filename(encoded, "attachment_0") == "отчёт.xlsx"
 
 
+def test_sanitize_short_name_unchanged():
+    # A normal short name is not touched by the length cap.
+    assert sanitize_filename("report.xlsx", "attachment_0") == "report.xlsx"
+
+
+def test_sanitize_long_stem_truncated_extension_preserved():
+    # A 300-char stem overflows the 255-byte component limit; it is truncated to
+    # <= 255 bytes with the extension preserved so `report.<ext>` stays valid.
+    name = "a" * 300 + ".xlsx"
+    result = sanitize_filename(name, "attachment_0")
+    assert result.endswith(".xlsx")
+    assert len(result.encode("utf-8")) <= 255
+    # The stem is truncated, not the whole thing dropped.
+    assert result.startswith("a")
+    assert len(result) < len(name)
+
+
+def test_sanitize_multibyte_name_truncated_on_char_boundary():
+    # Many Cyrillic chars (2 bytes each in UTF-8) overflow 255 bytes; truncation
+    # must land on a character boundary — the result is still valid UTF-8.
+    name = "я" * 300 + ".pdf"
+    result = sanitize_filename(name, "attachment_0")
+    assert result.endswith(".pdf")
+    assert len(result.encode("utf-8")) <= 255
+    # Valid UTF-8, no split multibyte char (round-trips cleanly).
+    assert result == result.encode("utf-8").decode("utf-8")
+    assert set(result[:-4]) == {"я"}
+
+
+def test_sanitize_absurd_extension_capped_whole():
+    # If the extension itself blows the budget, the whole name is capped.
+    name = "x." + "e" * 400
+    result = sanitize_filename(name, "attachment_0")
+    assert len(result.encode("utf-8")) <= 255
+
+
 # --------------------------------------------------------------------------
 # iter_attachments
 # --------------------------------------------------------------------------

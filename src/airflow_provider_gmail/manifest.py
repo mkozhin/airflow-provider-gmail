@@ -151,6 +151,24 @@ class Manifest:
             if key not in obj:
                 raise ManifestError(f"manifest is missing required key {key!r}")
 
+        # Presence is not enough: a corrupt manifest whose scalar fields are the
+        # wrong JSON type (a number/null/object where a string is contracted)
+        # must fail loudly, not be mistaken for a valid past-run manifest and
+        # silently skip the message (CONTEXT.md: loud failure on corruption).
+        for key in (
+            "source",
+            "message_id",
+            "internal_date",
+            "subject",
+            "from",
+            "run_id",
+        ):
+            if not isinstance(obj[key], str):
+                raise ManifestError(
+                    f"manifest {key!r} must be a string, "
+                    f"got {type(obj[key]).__name__}"
+                )
+
         raw_files = obj["files"]
         if not isinstance(raw_files, list):
             raise ManifestError(
@@ -168,6 +186,12 @@ class Manifest:
                 if key not in item:
                     raise ManifestError(
                         f"manifest files[{i}] is missing required key {key!r}"
+                    )
+            for key in ("name", "path"):
+                if not isinstance(item[key], str):
+                    raise ManifestError(
+                        f"manifest files[{i}] {key!r} must be a string, "
+                        f"got {type(item[key]).__name__}"
                     )
             size = item["size"]
             # bool is a subclass of int; a JSON boolean is not a valid size.

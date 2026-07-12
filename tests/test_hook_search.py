@@ -15,6 +15,8 @@ import json
 import logging
 from pathlib import Path
 
+import pytest
+
 from airflow_provider_gmail.hooks.gmail import (
     GmailHook,
     MessageWithAttachments,
@@ -209,6 +211,32 @@ def test_download_attachment_via_attachment_id():
     }
 
 
+def test_download_attachment_prefers_attachment_id_over_empty_data():
+    # A part carrying BOTH a real attachmentId AND data == "" must fetch the real
+    # bytes via attachments.get — NOT write a silent 0-byte file (data loss:
+    # later runs would dedup it and never re-fetch).
+    rec = Recorder()
+    raw = b"the real payload bytes"
+    body = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    rec.attachment_responses = {"ATT_1": {"data": body, "size": len(raw)}}
+    hook = _hook(rec)
+
+    attachment = Attachment(
+        filename="report.xlsx",
+        mime_type="application/octet-stream",
+        attachment_id="ATT_1",
+        data="",  # present-but-empty inline body alongside a real attachmentId
+    )
+    data = hook.download_attachment("mX", attachment)
+    assert data == raw
+    assert len(data) > 0  # real bytes, not a 0-byte file
+    assert rec.attachment_calls[0] == {
+        "userId": "me",
+        "messageId": "mX",
+        "id": "ATT_1",
+    }
+
+
 def test_download_attachment_empty_file_data():
     # An empty file arrives as data == "" (not None) and must decode to b"".
     rec = Recorder()
@@ -218,6 +246,22 @@ def test_download_attachment_empty_file_data():
     )
     assert hook.download_attachment("mX", attachment) == b""
     assert rec.attachment_calls == []
+
+
+def test_download_attachment_response_without_data_key_raises_key_error():
+    # A malformed attachments.get response (no "data" key) fails loudly with a
+    # KeyError rather than silently returning garbage.
+    rec = Recorder()
+    rec.attachment_responses = {"ATT_1": {"size": 0}}  # no "data"
+    hook = _hook(rec)
+    attachment = Attachment(
+        filename="report.xlsx",
+        mime_type="application/octet-stream",
+        attachment_id="ATT_1",
+        data=None,
+    )
+    with pytest.raises(KeyError):
+        hook.download_attachment("mX", attachment)
 
 
 # --------------------------------------------------------------------------- #
@@ -294,6 +338,39 @@ def test_cyrillic_subject_and_from_decoded():
     assert msg.from_ == "Отдел отчётов <reports@avito.ru>"
     assert msg.internal_date == 1752041662000
     assert [a.filename for a in msg.attachments] == ["Отчёт за июль.xlsx"]
+
+
+def test_missing_subject_and_from_headers_coalesce_to_empty_string():
+    # A message without Subject/From headers must yield "" (not None) so the
+    # manifest serializes strings, matching the layer-2 schema (never JSON null).
+    rec = Recorder()
+    rec.list_responses = [{"messages": [{"id": "m1"}]}]
+    message = {
+        "id": "m1",
+        "internalDate": "1752000000000",
+        "payload": {
+            "mimeType": "multipart/mixed",
+            "headers": [],  # no Subject, no From
+            "parts": [_att_part("a.pdf", "att_a")],
+        },
+    }
+    rec.get_responses = {"m1": message}
+    hook = _hook(rec)
+
+    results = hook.find_messages_with_attachments("q", None)
+    assert len(results) == 1
+    assert results[0].subject == ""
+    assert results[0].from_ == ""
+    # And it round-trips through the manifest as strings, not JSON null.
+    from airflow_provider_gmail.manifest import Manifest
+
+    payload = json.loads(
+        Manifest.build(
+            "avito", "m1", "2026-07-08T00:00:00", results[0].subject,
+            results[0].from_, [], "run1",
+        ).to_json()
+    )
+    assert payload["subject"] == "" and payload["from"] == ""
 
 
 def test_not_our_email_logged_at_info_with_names_and_pattern(caplog):

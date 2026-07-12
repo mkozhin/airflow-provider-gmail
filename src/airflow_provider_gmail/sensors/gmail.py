@@ -17,19 +17,25 @@ second copy of the query logic here.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from functools import cached_property
 from typing import Any
 
 from airflow.sensors.base import BaseSensorOperator
 
+from airflow_provider_gmail.dates import (
+    parse_date_range,
+    to_local_date,
+    validate_lookback_days,
+    validate_timezone,
+)
 from airflow_provider_gmail.hooks.gmail import (
     GmailHook,
     MessageWithAttachments,
     resolve_label_name,
 )
 from airflow_provider_gmail.manifest import Manifest
-from airflow_provider_gmail.operators.gmail import parse_date_range, to_local_date
 from airflow_provider_gmail.utils.paths import manifest_key
 from airflow_provider_gmail.window import Window
 
@@ -60,8 +66,17 @@ class GmailAttachmentSensor(BaseSensorOperator):
     The filter parameters mirror the operators exactly (``query``,
     ``from_email``, ``subject_contains``, ``has_attachment``,
     ``filename_contains``, ``attachment_pattern``, ``lookback_days``,
-    ``timezone``, ``date_from``/``date_to``, ``mark_processed``, ``label_suffix``,
-    ``overwrite``) so the same search is reproduced.
+    ``timezone``, ``date_from``/``date_to``, ``mark_processed``, ``label_suffix``)
+    so the same search is reproduced. There is no ``overwrite``: it only affects
+    an operator's download/deliver decision and has no meaning for a sensor.
+
+    **Pairing with the local operator: match ``lookback_days``.** This sensor's
+    default ``lookback_days`` is ``7``, but :class:`GmailAttachmentsToLocalOperator`
+    defaults to ``0`` ("today only"). Query parity only holds when the two agree,
+    so when you place this sensor in front of the local operator you **must** set
+    the same ``lookback_days`` on both (typically ``lookback_days=0`` on the
+    sensor) — otherwise the sensor may fire on a message the operator's narrower
+    window never returns, and the DAG hangs.
     """
 
     #: The sensor's *default* ``lookback_days``, used only to decide whether to
@@ -94,7 +109,6 @@ class GmailAttachmentSensor(BaseSensorOperator):
         mark_processed: bool = False,
         label_suffix: str | None = None,
         timezone: str = "Europe/Moscow",
-        overwrite: bool = False,
         date_from: str | None = None,
         date_to: str | None = None,
         mode: str = "reschedule",
@@ -103,6 +117,18 @@ class GmailAttachmentSensor(BaseSensorOperator):
         # reschedule by default (see the class docstring): the poke mode would
         # otherwise hold a worker slot for the entire (possibly multi-hour) wait.
         super().__init__(mode=mode, **kwargs)
+
+        # Reject negative lookback and an unknown timezone eagerly so bad config
+        # fails at DAG parse, not on the first poke — parity with the operator.
+        validate_lookback_days(lookback_days)
+        validate_timezone(timezone)
+
+        # Compile the pattern in __init__ so a bad regex fails at DAG parse
+        # (ADR-0005), for parity with the operators — not on the first poke. It is
+        # NOT templated (a rendered template would reach re.compile as raw text).
+        self._compiled_pattern: re.Pattern[str] | None = (
+            re.compile(attachment_pattern) if attachment_pattern is not None else None
+        )
 
         self.gmail_conn_id = gmail_conn_id
         self.source = source
@@ -116,9 +142,11 @@ class GmailAttachmentSensor(BaseSensorOperator):
         self.mark_processed = mark_processed
         self.label_suffix = label_suffix
         self.timezone = timezone
-        self.overwrite = overwrite
         self.date_from = date_from
         self.date_to = date_to
+        # Guards the "explicit range overrides non-default lookback_days" WARNING
+        # so it is logged once per instance rather than on every poke.
+        self._range_warning_logged = False
 
     @cached_property
     def hook(self) -> GmailHook:
@@ -151,9 +179,14 @@ class GmailAttachmentSensor(BaseSensorOperator):
         label_name = resolve_label_name(self.label_suffix)
 
         date_from, date_to = parse_date_range(self.date_from, self.date_to)
-        if (date_from is not None or date_to is not None) and (
-            self.lookback_days != self.default_lookback_days
+        if (
+            (date_from is not None or date_to is not None)
+            and (self.lookback_days != self.default_lookback_days)
+            and not self._range_warning_logged
         ):
+            # Log once per instance: poke() runs every poke_interval for hours, so
+            # an unconditional warning would repeat endlessly.
+            self._range_warning_logged = True
             self.log.warning(
                 "An explicit date_from/date_to range was given; the non-default "
                 "lookback_days=%s is ignored.",
@@ -174,7 +207,7 @@ class GmailAttachmentSensor(BaseSensorOperator):
             self.query,
         )
         return list(
-            self.hook.find_messages_with_attachments(query, self.attachment_pattern)
+            self.hook.find_messages_with_attachments(query, self._compiled_pattern)
         )
 
     def poke(self, context: Any) -> bool:
@@ -213,9 +246,11 @@ class GmailAttachmentToS3Sensor(GmailAttachmentSensor):
     intended ``poke_interval`` of ~30 min this cost is negligible, which is
     exactly why the cheap Gmail-only sensor stays a separate class.
 
-    ``overwrite=True`` is incompatible with this sensor: it would report "no
-    work" for a message that already has a manifest, so the operator behind it
-    would never run. Drive overwrite backfills without this sensor.
+    An ``overwrite`` backfill is incompatible with this sensor: it would report
+    "no work" for a message that already has a manifest, so the operator behind
+    it would never run. The sensor has no ``overwrite`` parameter at all — drive
+    overwrite backfills of :class:`GmailAttachmentsToS3Operator` without this
+    sensor.
 
     The ``apache-airflow-providers-amazon`` package (the ``s3`` extra) is
     imported **lazily** inside :meth:`_s3_hook`, so the module still imports —

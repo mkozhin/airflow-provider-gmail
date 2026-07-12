@@ -61,6 +61,37 @@ jobs:
         # Default run; the packaging smoke test is excluded via addopts in pyproject.
         run: python -m pytest
 
+  packaging:
+    name: packaging smoke test (build + twine + ProvidersManager)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # setuptools-scm derives the built wheel's version from tags/history.
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packaging/test tooling (UNCONSTRAINED — no Airflow)
+        # The packaging smoke test drives `python -m build` + `twine check` in
+        # THIS interpreter (the wheel install runs in a throwaway venv the test
+        # creates, pinned to airflow==2.9.1). twine>=6 / packaging>=24.2 are
+        # required to validate the wheel's PEP 639 Metadata 2.4. Do NOT apply the
+        # Airflow 2.9.1 constraints here: they pin twine==5.0.0 / packaging==24.0
+        # and would make `twine check` reject the wheel (mirror publish.yml).
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest build "twine>=6.1" "packaging>=24.2"
+
+      - name: Run the packaging smoke test
+        # Builds the wheel, twine-checks it, then in a clean venv pinned to
+        # airflow==2.9.1 asserts the entry point + ProvidersManager discovery.
+        # Explicit `-m packaging` overrides the default `-m 'not packaging'`.
+        run: python -m pytest -m packaging tests/test_packaging.py
+
   install-without-s3:
     name: install without [s3] (lazy-import isolation)
     runs-on: ubuntu-latest

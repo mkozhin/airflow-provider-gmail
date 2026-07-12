@@ -177,9 +177,12 @@ and `aws_conn_id` (default `"aws_default"`).
   Gmail; `poke()` → `True` when the search is non-empty. Use it where dedup is
   guaranteed by Gmail itself (`mark_processed=True`, whose label removes processed
   mail from the result set) and as the **default sensor for the local operator**.
-  Do **not** rely on `lookback_days=1` for dedup — a processed message stays in the
-  Gmail result set until the window ends, so with labels off this sensor re-fires
-  and the operator behind it honestly skips.
+  When you pair it with the local operator, **set matching `lookback_days` on
+  both** (this sensor defaults to `7`, the local operator to `0`); otherwise the
+  sensor may fire on a message the operator's narrower window never returns and the
+  DAG hangs. Do **not** rely on `lookback_days=1` for dedup — a processed message
+  stays in the Gmail result set until the window ends, so with labels off this
+  sensor re-fires and the operator behind it honestly skips.
 - **`GmailAttachmentToS3Sensor`** — *"is there new work?"* Subclasses the first,
   adds `bucket`/`prefix`/`aws_conn_id`, and drops every message that already has a
   `_manifest.json` in S3. `True` only if at least one **unprocessed** message

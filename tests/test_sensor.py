@@ -11,6 +11,7 @@ identical params. The fake hook's ``build_query`` therefore delegates to the
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -142,6 +143,52 @@ def test_default_mode_is_reschedule():
 def test_filter_processed_label_follows_mark_processed():
     assert _make_sensor(mark_processed=False)._filter_processed_label() is False
     assert _make_sensor(mark_processed=True)._filter_processed_label() is True
+
+
+def test_invalid_attachment_pattern_fails_at_init():
+    # Parity with the operators (ADR-0005): a bad regex must fail at DAG parse
+    # (construction), not on the first poke.
+    with pytest.raises(re.error):
+        _make_sensor(attachment_pattern="([")
+
+
+def test_negative_lookback_days_fails_at_init():
+    # Parity with the operator base __init__: a negative lookback_days must be
+    # rejected at construction (DAG parse), not silently accepted and turned into
+    # a future `after:` boundary on the first poke.
+    with pytest.raises(ValueError):
+        _make_sensor(lookback_days=-1)
+
+
+def test_unknown_timezone_fails_at_init():
+    # Parity with the operator base __init__: an unknown IANA timezone must fail
+    # at construction (ZoneInfo resolved eagerly), not on the first poke.
+    with pytest.raises(ValueError):
+        _make_sensor(timezone="Not/AZone")
+
+
+def test_sensor_has_no_overwrite_parameter():
+    # overwrite only affects an operator's download/deliver decision and is
+    # meaningless for a sensor; it must not be an accepted kwarg (Airflow rejects
+    # the unknown arg with AirflowException) and must not be stored.
+    from airflow.exceptions import AirflowException
+
+    with pytest.raises(AirflowException):
+        _make_sensor(overwrite=True)
+    assert not hasattr(_make_sensor(), "overwrite")
+
+
+def test_range_override_warning_logged_once_across_pokes(caplog):
+    # The "explicit range overrides non-default lookback_days" WARNING must fire
+    # once per instance, not on every poke (poke runs for hours).
+    sensor = _make_sensor(date_from="2026-07-01", lookback_days=3)
+    hook = FakeGmailHook([])
+    with caplog.at_level("WARNING"):
+        _poke(sensor, hook)
+        _poke(sensor, hook)
+        _poke(sensor, hook)
+    warnings = [r for r in caplog.records if "lookback_days" in r.getMessage()]
+    assert len(warnings) == 1
 
 
 # -- poke --------------------------------------------------------------------

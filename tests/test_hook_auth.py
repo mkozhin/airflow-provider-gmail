@@ -54,9 +54,34 @@ def test_credentials_built_from_connection():
     assert kwargs["client_secret"] == "client-secret"
     assert kwargs["token"] is None
     assert kwargs["token_uri"] == "https://oauth2.googleapis.com/token"
+    # 'scopes' is reference-only and must never reach Credentials.
+    assert "scopes" not in kwargs
     build.assert_called_once()
     assert build.call_args.args[:2] == ("gmail", "v1")
     assert service is build.return_value
+
+
+def test_scopes_extra_is_reference_only_not_passed_to_credentials():
+    # Regression: 'scopes' is a decorative reference-only extra. It arrives from
+    # the UI as a STRING; google-auth treats Credentials(scopes=...) as an
+    # iterable of scope strings, so passing the string would be split
+    # character-by-character into bogus per-char scopes and break the refresh
+    # grant for anyone who fills the field. It must not reach Credentials.
+    scope_str = "https://www.googleapis.com/auth/gmail.readonly"
+    hook = _hook(_conn({"refresh_token": "1//x", "scopes": scope_str}))
+    with mock.patch(f"{MODULE}.Credentials") as creds_cls, mock.patch(
+        f"{MODULE}.Request"
+    ), mock.patch(f"{MODULE}.build"):
+        creds = creds_cls.return_value
+        hook.get_conn()
+
+    # Credentials is built without any 'scopes' argument...
+    kwargs = creds_cls.call_args.kwargs
+    assert "scopes" not in kwargs
+    # ...and certainly not the string that would be iterated into per-char scopes.
+    assert kwargs.get("scopes") != scope_str
+    # The refresh still happens (auth is not broken by a filled 'scopes' field).
+    creds.refresh.assert_called_once()
 
 
 def test_refresh_called_once_across_repeated_get_conn():

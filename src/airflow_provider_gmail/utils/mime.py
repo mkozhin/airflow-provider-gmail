@@ -20,6 +20,13 @@ from dataclasses import dataclass
 _ENCODED_WORD = re.compile(r"=\?[^?]+\?[BbQq]\?[^?]*\?=")
 _CONTROL_CHARS = {chr(c) for c in range(0, 32)} | {chr(127)}
 
+# Most local filesystems cap a single path component at 255 bytes (ext4, xfs,
+# apfs) and S3 caps a whole key at 1024 — 255 is the binding constraint. A few
+# bytes are reserved so the ``_N`` collision suffix appended by
+# ``resolve_collisions`` still fits under the limit.
+_MAX_FILENAME_BYTES = 255
+_FILENAME_SUFFIX_RESERVE = 8
+
 
 def decode_header_value(raw: str) -> str:
     """Decode an RFC 2047 header value (``Subject``/``From``) to a plain string.
@@ -41,11 +48,47 @@ def decode_header_value(raw: str) -> str:
     return "".join(decoded_parts)
 
 
+def _cut_to_bytes(text: str, max_bytes: int) -> str:
+    """Truncate ``text`` to at most ``max_bytes`` UTF-8 bytes on a char boundary.
+
+    Slicing the encoded bytes can leave a partial trailing multibyte character;
+    decoding with ``errors="ignore"`` drops it, so the result is always valid
+    UTF-8 and never splits a code point.
+    """
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text
+    return encoded[:max_bytes].decode("utf-8", errors="ignore")
+
+
+def _cap_filename_length(name: str) -> str:
+    """Cap ``name`` at a filesystem/S3-safe UTF-8 byte length, keeping the extension.
+
+    A long or multibyte attachment name would overflow the 255-byte filesystem
+    component limit (ENAMETOOLONG in the local operator's write) or the S3 key
+    limit, failing the whole message on every retry — a permanent stall. The
+    stem is truncated on a UTF-8 character boundary so ``report.<ext>`` stays
+    valid; if the extension itself is absurdly long, the whole name is capped.
+    """
+    budget = _MAX_FILENAME_BYTES - _FILENAME_SUFFIX_RESERVE
+    if len(name.encode("utf-8")) <= budget:
+        return name
+
+    stem, dot, ext = name.rpartition(".")
+    suffix = f".{ext}" if dot else ""
+    stem_budget = budget - len(suffix.encode("utf-8"))
+    if stem_budget <= 0:
+        # The extension alone blows the budget — cap the whole name.
+        return _cut_to_bytes(name, budget)
+    return _cut_to_bytes(stem, stem_budget) + suffix
+
+
 def sanitize_filename(name: str, fallback: str) -> str:
     """Turn an attacker-controlled attachment name into a safe path segment.
 
     Takes the basename only, drops ``/``, ``\\``, ``..``, null bytes and control
-    characters. If nothing usable is left, returns ``fallback``.
+    characters, then caps the result at a filesystem/S3-safe byte length. If
+    nothing usable is left, returns ``fallback``.
 
     A defensive RFC 2047 fallback runs first: Gmail normally gives the filename
     already decoded, but if a fixture ever shows an encoded word we still decode
@@ -65,7 +108,7 @@ def sanitize_filename(name: str, fallback: str) -> str:
     # Empty, or nothing but dots ("." / "..." after the strip) — not a real name.
     if not candidate or set(candidate) <= {"."}:
         return fallback
-    return candidate
+    return _cap_filename_length(candidate)
 
 
 @dataclass

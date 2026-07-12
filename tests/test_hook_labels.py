@@ -269,3 +269,27 @@ def test_other_403_is_not_swallowed():
 
     with pytest.raises(HttpError):
         hook.mark_processed(["m1"], "airflow/processed")
+
+
+def test_non_403_error_from_batch_modify_propagates_unchanged():
+    # A non-403 (e.g. 500) must reach the caller as the raw HttpError — the
+    # "leave other errors alone" path, not GmailPermissionError.
+    rec = Recorder()
+    rec.existing_labels = [{"id": "Label_42", "name": "airflow/processed"}]
+    rec.batch_error = _http_error(500, "backendError")
+    hook = _hook(rec, num_retries=1)
+
+    with pytest.raises(HttpError) as exc_info:
+        hook.mark_processed(["m1"], "airflow/processed")
+    assert exc_info.value.resp.status == 500
+
+
+def test_non_403_error_from_label_create_propagates_unchanged():
+    rec = Recorder()
+    rec.existing_labels = [{"id": "Label_1", "name": "INBOX"}]
+    rec.create_error = _http_error(500, "backendError")
+    hook = _hook(rec, num_retries=1)
+
+    with pytest.raises(HttpError) as exc_info:
+        hook.get_or_create_label("airflow/processed")
+    assert exc_info.value.resp.status == 500
