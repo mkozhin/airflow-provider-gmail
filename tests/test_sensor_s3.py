@@ -163,6 +163,12 @@ def test_default_mode_is_reschedule():
     assert sensor.mode == "reschedule"
 
 
+def test_default_soft_fail_is_false():
+    # Contract guard (Task 9): the S3 sensor shares the base __init__ and does
+    # NOT override soft_fail, so Airflow's loud default (False) holds here too.
+    assert _make_sensor({}).soft_fail is False
+
+
 def test_filter_processed_label_always_false():
     # even with mark_processed=True the S3 sensor never filters by label (ADR-0001)
     assert _make_sensor({}, mark_processed=True)._filter_processed_label() is False

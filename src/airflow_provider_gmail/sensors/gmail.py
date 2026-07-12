@@ -60,8 +60,10 @@ class GmailAttachmentSensor(BaseSensorOperator):
     ``mode="reschedule"`` is set as the **default** in ``__init__`` (not merely
     documented): in the default ``poke`` mode the sensor would hold a worker slot
     for the whole wait (hours), and with dozens of exports that eats the pool.
-    ``soft_fail=True`` (inherited from :class:`BaseSensorOperator`) turns a
-    timeout into ``skipped`` (green DAG) instead of a failure/alert.
+    ``soft_fail`` is **not** overridden here, so Airflow's default (``False``)
+    applies: a ``timeout`` **fails** the task and fires alerts. Pass
+    ``soft_fail=True`` explicitly if you want a timeout to become ``skipped``
+    (green DAG) instead of a failure/alert.
 
     The filter parameters mirror the operators exactly (``query``,
     ``from_email``, ``subject_contains``, ``has_attachment``,

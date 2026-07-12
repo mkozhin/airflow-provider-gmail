@@ -168,7 +168,7 @@ searches the same set of messages the operator will. They also expose the
 | `mode` | `str` | `"reschedule"` | **Set to `reschedule` by default in `__init__`** — in `poke` mode the sensor holds a worker slot for the whole wait (hours); with dozens of exports that eats the pool. |
 | `poke_interval` | `int` | `60` | Seconds between pokes (use ~30 min in practice). |
 | `timeout` | `int` | — | Give-up time. |
-| `soft_fail` | `bool` | `False` | `True` → timeout becomes `skipped` (green DAG); `False` → hard failure + alert. Inherited from `BaseSensorOperator`. |
+| `soft_fail` | `bool` | `False` | Not overridden here, so Airflow's default applies: a timeout **fails** the task and fires alerts. Pass `soft_fail=True` explicitly to make a timeout `skipped` (green DAG) instead. |
 
 `GmailAttachmentToS3Sensor` additionally takes `bucket`, `prefix` (default `""`)
 and `aws_conn_id` (default `"aws_default"`).

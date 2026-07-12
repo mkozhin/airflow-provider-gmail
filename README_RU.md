@@ -163,7 +163,7 @@ extra:     {"refresh_token": "1//09fy...",
 | `mode` | `str` | `"reschedule"` | **Выставляется `reschedule` по умолчанию в `__init__`** — в режиме `poke` сенсор держит слот воркера всё время ожидания (часы); при десятках выгрузок это выест пул. |
 | `poke_interval` | `int` | `60` | Секунды между poke (на практике ~30 мин). |
 | `timeout` | `int` | — | Время до сдачи. |
-| `soft_fail` | `bool` | `False` | `True` → таймаут даёт `skipped` (зелёный DAG); `False` → падение + алерт. Наследуется от `BaseSensorOperator`. |
+| `soft_fail` | `bool` | `False` | Здесь не переопределяется, поэтому действует дефолт Airflow: таймаут **валит** задачу и шлёт алерты. Передайте `soft_fail=True` явно, чтобы таймаут стал `skipped` (зелёный DAG). |
 
 `GmailAttachmentToS3Sensor` дополнительно принимает `bucket`, `prefix` (дефолт `""`)
 и `aws_conn_id` (дефолт `"aws_default"`).

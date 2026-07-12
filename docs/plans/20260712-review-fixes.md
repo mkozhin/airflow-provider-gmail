@@ -384,15 +384,18 @@
 - Modify: `README_RU.md`
 - Modify: `tests/test_sensor.py`
 
-- [ ] переписать предложение docstring (sensors/gmail.py:63-64): дефолт
+- [x] переписать предложение docstring (sensors/gmail.py:63-64): дефолт
   Airflow — `soft_fail=False`, таймаут = ошибка + алерт; «передайте
   `soft_fail=True`, чтобы таймаут стал `skipped` (зелёный DAG)»; дефолт в коде
   НЕ менять (решение пользователя)
-- [ ] проверить README.md / README_RU.md (разделы про сенсоры) на ту же
-  формулировку «inherited» и поправить
-- [ ] write tests: тест-фиксация контракта — у инстанса сенсора без явного
-  аргумента `soft_fail is False` (защита от случайной смены дефолта)
-- [ ] run tests — must pass before task 10
+- [x] проверить README.md / README_RU.md (разделы про сенсоры) на ту же
+  формулировку «inherited» и поправить (таблица `soft_fail` в обоих README:
+  переписана с честным дефолтом, «Inherited from BaseSensorOperator» убрано)
+- [x] write tests: тест-фиксация контракта — у инстанса сенсора без явного
+  аргумента `soft_fail is False` (защита от случайной смены дефолта;
+  добавлено `test_default_soft_fail_is_false` в test_sensor.py и
+  test_sensor_s3.py — покрыты базовый сенсор и подкласс S3)
+- [x] run tests — must pass before task 10
 
 ### Task 10: Предупреждение о backfill над общим префиксом
 

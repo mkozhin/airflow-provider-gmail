@@ -147,6 +147,14 @@ def test_default_mode_is_reschedule():
     assert sensor.mode == "reschedule"
 
 
+def test_default_soft_fail_is_false():
+    # Contract guard (Task 9): the sensor deliberately does NOT override
+    # soft_fail, so Airflow's loud default (False → timeout fails the task and
+    # fires alerts) applies. A user must pass soft_fail=True explicitly to turn a
+    # timeout into `skipped`. Guards against an accidental silent default change.
+    assert _make_sensor().soft_fail is False
+
+
 def test_filter_processed_label_follows_mark_processed():
     assert _make_sensor(mark_processed=False)._filter_processed_label() is False
     assert _make_sensor(mark_processed=True)._filter_processed_label() is True
