@@ -554,8 +554,7 @@ class GmailAttachmentsToLocalOperator(GmailAttachmentsBaseOperator):
        will not find the file. In such an environment the local operator is safe
        only *within a single task*; use the S3 operator for everything else.
     2. **Idempotency is not guaranteed.** Deduplication is possible **only** via
-       ``mark_processed=True`` (the label removes a processed message from the Gmail
-       result set). ``lookback_days=1`` is **not** dedup — the search window is a
+       ``mark_processed=True``. ``lookback_days=1`` is **not** dedup — the search window is a
        time filter, not processing state; a message keeps matching every run until it
        falls out of the window. A smaller window only reduces the number of repeats,
        it does not eliminate them. With ``mark_processed=True`` and a wide window,

@@ -53,9 +53,10 @@ class GmailAttachmentSensor(BaseSensorOperator):
     re-fires on it. When you need "is there *new* work", use
     :class:`GmailAttachmentToS3Sensor` instead.
 
-    Suited to flows where dedup is provided by Gmail itself
-    (``mark_processed=True`` — the label removes processed mail from the result
-    set) and to the local operator.
+    Suited to flows where dedup is opt-in via ``mark_processed=True`` (labelled
+    messages stay in Gmail's result set and the provider filters them out in
+    code by comparing ``labelIds`` to the resolved processed-label id) and to
+    the local operator.
 
     ``mode="reschedule"`` is set as the **default** in ``__init__`` (not merely
     documented): in the default ``poke`` mode the sensor would hold a worker slot
