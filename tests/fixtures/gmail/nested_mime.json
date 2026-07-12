@@ -1,0 +1,55 @@
+{
+  "id": "aa11bb22cc33",
+  "internalDate": "1752000000000",
+  "payload": {
+    "mimeType": "multipart/mixed",
+    "headers": [
+      {
+        "name": "Subject",
+        "value": "nested"
+      },
+      {
+        "name": "From",
+        "value": "sender@example.com"
+      }
+    ],
+    "parts": [
+      {
+        "mimeType": "multipart/related",
+        "filename": "",
+        "parts": [
+          {
+            "mimeType": "multipart/alternative",
+            "filename": "",
+            "parts": [
+              {
+                "mimeType": "text/plain",
+                "filename": "",
+                "body": {
+                  "size": 5,
+                  "data": "aGk="
+                }
+              },
+              {
+                "mimeType": "text/html",
+                "filename": "",
+                "body": {
+                  "size": 20,
+                  "data": "PHA-aGk8L3A-"
+                }
+              }
+            ]
+          },
+          {
+            "mimeType": "application/pdf",
+            "filename": "deep_report.pdf",
+            "body": {
+              "size": 4096,
+              "attachmentId": "ANGjdJ_nested_pdf"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

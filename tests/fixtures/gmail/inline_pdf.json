@@ -1,0 +1,33 @@
+{
+  "id": "inline0002",
+  "internalDate": "1752000000000",
+  "payload": {
+    "mimeType": "multipart/related",
+    "headers": [
+      {
+        "name": "Subject",
+        "value": "inline pdf"
+      },
+      {
+        "name": "From",
+        "value": "sender@example.com"
+      }
+    ],
+    "parts": [
+      {
+        "mimeType": "application/pdf",
+        "filename": "report.pdf",
+        "headers": [
+          {
+            "name": "Content-Disposition",
+            "value": "inline; filename=\"report.pdf\""
+          }
+        ],
+        "body": {
+          "size": 2048,
+          "attachmentId": "ANGjdJ_inline_pdf"
+        }
+      }
+    ]
+  }
+}

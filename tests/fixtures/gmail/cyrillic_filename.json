@@ -1,0 +1,41 @@
+{
+  "id": "18c2f4a9b3d5e6f7",
+  "internalDate": "1752041662000",
+  "payload": {
+    "mimeType": "multipart/mixed",
+    "headers": [
+      {
+        "name": "Subject",
+        "value": "=?utf-8?b?0J7RgtGH0ZHRgiDQt9CwIDA5LjA3?="
+      },
+      {
+        "name": "From",
+        "value": "=?utf-8?b?0J7RgtC00LXQuyDQvtGC0YfRkdGC0L7Qsg==?= <reports@avito.ru>"
+      }
+    ],
+    "parts": [
+      {
+        "mimeType": "text/plain",
+        "filename": "",
+        "body": {
+          "size": 12,
+          "data": "0YLQtdC70L4g0L_QuNGB0YzQvNCw"
+        }
+      },
+      {
+        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "filename": "Отчёт за июль.xlsx",
+        "headers": [
+          {
+            "name": "Content-Disposition",
+            "value": "attachment; filename=\"=?UTF-8?B?...?=\""
+          }
+        ],
+        "body": {
+          "size": 148223,
+          "attachmentId": "ANGjdJ_cyr_001"
+        }
+      }
+    ]
+  }
+}

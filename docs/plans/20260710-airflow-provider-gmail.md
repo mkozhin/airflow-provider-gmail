@@ -684,49 +684,49 @@ return delivered                                # → XCom: только пис�
   `cyrillic_filename.json`, `nested_mime.json`, `inline_image.json`, `inline_pdf.json`,
   `body_data.json`, `empty_file.json`
 
-- [ ] реализацию вести на **синтетических** фикстурах в `tests/fixtures/gmail/` —
+- [x] реализацию вести на **синтетических** фикстурах в `tests/fixtures/gmail/` —
       рукописных JSON-ответах `messages.get(format=full)`, покрывающих нужные случаи
       (кириллическое имя, вложенный MIME, inline-картинка, inline-PDF, `body.data`,
       пустой файл). Живые credentials и сеть для реализации не нужны; снятие и
       обезличивание реальных писем — валидация в Post-Completion, не блокер задачи
-- [ ] `decode_header_value(raw: str) -> str` — RFC 2047 через `email.header.decode_header`
+- [x] `decode_header_value(raw: str) -> str` — RFC 2047 через `email.header.decode_header`
       для `Subject` и `From` (там кодировка есть всегда). Никакого
       `collapse_rfc2231_value`: сырого `Content-Disposition` у нас нет, а из одной
       строки continuation-параметры не восстановить
-- [ ] `sanitize_filename(name: str, fallback: str) -> str` — только basename, вырезать
+- [x] `sanitize_filename(name: str, fallback: str) -> str` — только basename, вырезать
       `/`, `\`, `..`, нулевые байты и управляющие символы; пустой результат → `fallback`.
       Отдельного `decode_filename` **нет**: Gmail отдаёт `filename` готовой строкой,
       декодировать нечего (см. «Декодирование имени»); если фикстуры вдруг покажут
       закодированное имя — добавить RFC 2047 fallback внутрь `sanitize_filename`
-- [ ] `Attachment` — dataclass: `filename` (исходное декодированное имя),
+- [x] `Attachment` — dataclass: `filename` (исходное декодированное имя),
       `mime_type`, `attachment_id: str | None`, `data: str | None` (base64url или
       `None`). Поля `size` **нет** (размер известен только после декодирования байт),
       `safe_name` **нет** — его добавляет `resolve_collisions` в операторе, не MIME-слой
-- [ ] `iter_attachments(payload: dict) -> Iterator[Attachment]` — **рекурсивный**
+- [x] `iter_attachments(payload: dict) -> Iterator[Attachment]` — **рекурсивный**
       обход `parts`. Вложение — часть с непустым `filename` и хотя бы одним источником
       тела: ключ `attachmentId` или ключ `data` в `body` (проверять **наличие ключа**,
       не truthiness — пустой файл даёт `data=""`)
-- [ ] отсев inline: часть пропускается, только если она inline **и** (`mime_type`
+- [x] отсев inline: часть пропускается, только если она inline **и** (`mime_type`
       начинается с `image/` **или** есть заголовок `Content-ID`). «inline» определять
       разбором `Content-Disposition`: первый токен до `;`, lower-case, сравнить с
       `inline` — не сравнением всей строки. Inline не-картинки (PDF, xlsx) остаются
-- [ ] `header(payload, name) -> str | None` — достать `Subject`/`From` из
+- [x] `header(payload, name) -> str | None` — достать `Subject`/`From` из
       `payload.headers` (список `{"name", "value"}`, регистр имени произвольный)
       и прогнать через `decode_header_value`
-- [ ] написать тесты на `decode_header_value`: ASCII, кириллица base64, кириллица
+- [x] написать тесты на `decode_header_value`: ASCII, кириллица base64, кириллица
       quoted-printable, склейка нескольких encoded-words, некорректная кодировка
-- [ ] написать тесты на `sanitize_filename`: `../../etc/passwd`, `a/b.xlsx`,
+- [x] написать тесты на `sanitize_filename`: `../../etc/passwd`, `a/b.xlsx`,
       имя из одних точек, нулевой байт, пустая строка → fallback
-- [ ] написать тесты на `iter_attachments`: плоский `multipart/mixed`, вложенный
+- [x] написать тесты на `iter_attachments`: плоский `multipart/mixed`, вложенный
       `mixed → related → alternative`, письмо без `parts`, вложение через `body.data`
       без `attachmentId`, **пустой файл `body.data=""` → распознан как вложение**,
       часть без `attachmentId` и без ключа `data` → не вложение
-- [ ] написать тесты на inline: `Content-Disposition: inline` (лого) → отсеян;
+- [x] написать тесты на inline: `Content-Disposition: inline` (лого) → отсеян;
       `Inline; filename="logo.png"` с параметрами и заглавной буквой → отсеян;
       **inline-PDF (`inline; filename="report.pdf"`, не image) → остаётся вложением**
-- [ ] написать тесты на `header()`: кириллическая тема, отсутствующий заголовок,
+- [x] написать тесты на `header()`: кириллическая тема, отсутствующий заголовок,
       регистр `subject` / `Subject`
-- [ ] запустить `pytest` — должен пройти до перехода к задаче 3
+- [x] запустить `pytest` — должен пройти до перехода к задаче 3
 
 ### Task 3: GmailHook — аутентификация и подключение
 

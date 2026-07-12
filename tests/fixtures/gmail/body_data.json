@@ -1,0 +1,33 @@
+{
+  "id": "bodydata01",
+  "internalDate": "1752000000000",
+  "payload": {
+    "mimeType": "multipart/mixed",
+    "headers": [
+      {
+        "name": "Subject",
+        "value": "small file"
+      },
+      {
+        "name": "From",
+        "value": "sender@example.com"
+      }
+    ],
+    "parts": [
+      {
+        "mimeType": "text/csv",
+        "filename": "small.csv",
+        "headers": [
+          {
+            "name": "Content-Disposition",
+            "value": "attachment; filename=\"small.csv\""
+          }
+        ],
+        "body": {
+          "size": 5,
+          "data": "YSxiLGM="
+        }
+      }
+    ]
+  }
+}

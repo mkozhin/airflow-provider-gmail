@@ -1,0 +1,33 @@
+{
+  "id": "emptyfile1",
+  "internalDate": "1752000000000",
+  "payload": {
+    "mimeType": "multipart/mixed",
+    "headers": [
+      {
+        "name": "Subject",
+        "value": "empty"
+      },
+      {
+        "name": "From",
+        "value": "sender@example.com"
+      }
+    ],
+    "parts": [
+      {
+        "mimeType": "application/octet-stream",
+        "filename": "empty.dat",
+        "headers": [
+          {
+            "name": "Content-Disposition",
+            "value": "attachment; filename=\"empty.dat\""
+          }
+        ],
+        "body": {
+          "size": 0,
+          "data": ""
+        }
+      }
+    ]
+  }
+}
