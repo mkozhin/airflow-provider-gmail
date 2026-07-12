@@ -29,6 +29,7 @@ manifest's ``run_id``; the operator only maps its verdict onto actions.
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Iterable, Sequence
 from datetime import date, datetime
@@ -545,3 +546,118 @@ class GmailAttachmentsToS3Operator(GmailAttachmentsBaseOperator):
     def _filter_processed_label(self) -> bool:
         """Never filter the S3 search by label (ADR-0001) — correctness is the manifest."""
         return False
+
+
+class GmailAttachmentsToLocalOperator(GmailAttachmentsBaseOperator):
+    """Download matching Gmail attachments and write them to the local disk.
+
+    Concrete local implementation of the storage seam (ADR-0006). Attachments and
+    the per-message ``_manifest.json`` are written under
+    ``<path>/dt=<dt>/<message_id>/``; the manifest's absolute paths of the messages
+    processed **in this run** are returned in XCom.
+
+    **This operator is deliberately outside the S3 retry-delivery contract**
+    (ADR-0001). :meth:`_read_manifest` always returns ``None``, so :func:`decide`
+    always yields ``DOWNLOAD_AND_DELIVER``: every matched message is downloaded and
+    delivered on every run. The local disk keeps no persistent dedup state — in the
+    normal path (download → parse → a cleanup task removes the files) nothing is
+    there on the next run, and if a run does repeat, overwriting is safer than
+    failing. The manifest is still written, as a description of what was downloaded
+    for the next step (it carries ``run_id``, even though this operator never reads
+    it back).
+
+    **Different ``lookback_days`` default from S3 (``0`` here vs ``7`` there).**
+    S3 dedups delivery by manifest + ``run_id``, so a wide window is safe there; the
+    local operator has no such dedup, so a wide window would re-deliver every message
+    each run. The safe default is therefore ``0`` — "today only" — which suppresses
+    duplicates by the *narrowness of the window* rather than by dedup (ADR-0001).
+    :attr:`default_lookback_days` is overridden to ``0`` as well so the
+    "explicit range overrides a non-default lookback_days" WARNING in ``execute()``
+    is correct for the local default.
+
+    Limitations (read before deploying):
+
+    1. **One worker on one server.** The local disk is not shared between workers.
+       Under CeleryExecutor with several workers, or KubernetesExecutor, the
+       download task and the parse task may land on different machines and the parse
+       will not find the file. In such an environment the local operator is safe
+       only *within a single task*; use the S3 operator for everything else.
+    2. **Idempotency is not guaranteed.** Deduplication is possible **only** via
+       ``mark_processed=True`` (the label removes a processed message from the Gmail
+       result set). ``lookback_days=1`` is **not** dedup — the search window is a
+       time filter, not processing state; a message keeps matching every run until it
+       falls out of the window. A smaller window only reduces the number of repeats,
+       it does not eliminate them. With ``mark_processed=True`` and a wide window,
+       ``-label:`` is mixed into the search (see :meth:`_filter_processed_label`) as
+       an opt-in dedup; the honest caveat is that a crash between setting the label
+       and delivering downstream can, on retry, "lose" that message's delivery —
+       acceptable within local's already-documented non-idempotency, and exactly why
+       S3 (which has a retry-delivery contract) never uses ``-label:`` as a filter.
+    3. **File cleanup is the DAG's job**, not the operator's. This operator never
+       deletes anything; a downstream task (typically on ``all_done``) must remove
+       the files, or the disk fills up.
+
+    There is no user-facing ``overwrite`` argument: local has nothing to overwrite
+    conditionally (``_read_manifest`` is always ``None`` and files are always
+    overwritten). The inherited ``self.overwrite`` attribute stays ``False`` so the
+    base ``execute()`` can reference it uniformly. Each attachment is loaded **fully
+    into memory** before being written (Gmail caps incoming messages at 25 MB).
+    """
+
+    #: The local operator's *default* ``lookback_days`` (ADR-0001). Overridden to
+    #: ``0`` from the base ``7`` so the "explicit range overrides a non-default
+    #: lookback_days" WARNING in ``execute()`` fires correctly for local.
+    default_lookback_days: int = 0
+
+    template_fields: Sequence[str] = (
+        *GmailAttachmentsBaseOperator.template_fields,
+        "path",
+    )
+
+    def __init__(
+        self,
+        *,
+        path: str,
+        lookback_days: int = 0,
+        **kwargs,
+    ) -> None:
+        # No public ``overwrite`` argument: it is fixed at the base default (False)
+        # and never exposed here (see the class docstring).
+        super().__init__(lookback_days=lookback_days, **kwargs)
+        self.path = path
+
+    def _write(self, rel_path: str, data: bytes) -> None:
+        """Write ``data`` to disk, creating directories and overwriting the file.
+
+        The file is overwritten **without checking whether it exists**: in the
+        normal path a cleanup task already removed everything, and if a run did
+        repeat, overwriting is safer than failing.
+        """
+        dest = self._destination_path(rel_path)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as fh:
+            fh.write(data)
+
+    def _destination_path(self, rel_path: str) -> str:
+        """The absolute filesystem path of ``rel_path`` under :attr:`path`."""
+        return os.path.abspath(os.path.join(self.path, rel_path))
+
+    def _read_manifest(self, rel_dir: str) -> Manifest | None:
+        """Always ``None``: local keeps no dedup state.
+
+        With no manifest, :func:`decide` always returns
+        ``Decision.DOWNLOAD_AND_DELIVER`` — every matched message is downloaded and
+        delivered every run (ADR-0001).
+        """
+        return None
+
+    def _filter_processed_label(self) -> bool:
+        """Return :attr:`mark_processed`: local's opt-in dedup of a wide window.
+
+        Unlike S3, local has no retry-delivery contract for the label to break, so
+        mixing ``-label:`` into the search is allowed when ``mark_processed=True``.
+        Caveat (see the class docstring): a crash between setting the label and
+        delivering downstream can, on retry, lose that message's delivery — local
+        makes no retry-delivery guarantee.
+        """
+        return self.mark_processed
