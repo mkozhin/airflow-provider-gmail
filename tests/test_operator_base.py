@@ -132,6 +132,14 @@ def test_resolve_collisions_two_extensionless_names():
     assert names == ["README", "README_1"]
 
 
+def test_resolve_collisions_two_dotfiles():
+    # A dotfile (leading dot, no extension) collides as ".bashrc_1", not
+    # "_1.bashrc" — os.path.splitext treats it as an extensionless name.
+    atts = [_attachment(".bashrc"), _attachment(".bashrc")]
+    names = [name for _, name in resolve_collisions(atts)]
+    assert names == [".bashrc", ".bashrc_1"]
+
+
 def test_resolve_collisions_multi_increment_when_candidate_occupied():
     # The first free suffix must skip an already-occupied "_1" candidate.
     atts = [

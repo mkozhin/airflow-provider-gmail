@@ -13,6 +13,7 @@ Gmail JSON) and returns plain values. No Airflow, no network.
 from __future__ import annotations
 
 import email.header
+import os.path
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -69,13 +70,18 @@ def _cap_filename_length(name: str) -> str:
     limit, failing the whole message on every retry — a permanent stall. The
     stem is truncated on a UTF-8 character boundary so ``report.<ext>`` stays
     valid; if the extension itself is absurdly long, the whole name is capped.
+
+    The name is split with :func:`os.path.splitext` (the same splitter as
+    :func:`airflow_provider_gmail.operators.gmail._first_free_name`), so an
+    extensionless name keeps its whole self as the stem (never truncates to
+    ``""``) and a dotfile such as ``.bashrc`` is treated as an extensionless
+    name rather than a bare extension.
     """
     budget = _MAX_FILENAME_BYTES - _FILENAME_SUFFIX_RESERVE
     if len(name.encode("utf-8")) <= budget:
         return name
 
-    stem, dot, ext = name.rpartition(".")
-    suffix = f".{ext}" if dot else ""
+    stem, suffix = os.path.splitext(name)
     stem_budget = budget - len(suffix.encode("utf-8"))
     if stem_budget <= 0:
         # The extension alone blows the budget — cap the whole name.

@@ -215,19 +215,19 @@
 - Modify: `tests/test_mime.py`
 - Modify: `tests/test_operator_base.py`
 
-- [ ] в `_cap_filename_length` (mime.py:77-83) заменить
+- [x] в `_cap_filename_length` (mime.py:77-83) заменить
   `name.rpartition(".")` на `os.path.splitext(name)` (импортировать `os.path`);
   для имени без точки stem == имя целиком, обрезка больше не даёт `""`
-- [ ] в `_first_free_name` (operators/gmail.py:97-110) заменить ручной
+- [x] в `_first_free_name` (operators/gmail.py:97-110) заменить ручной
   `rpartition` на `os.path.splitext` — `.bashrc` при коллизии становится
   `.bashrc_1`, а не `_1.bashrc`
-- [ ] write tests (mime): `sanitize_filename("а"*130, "attachment_1")`
+- [x] write tests (mime): `sanitize_filename("а"*130, "attachment_1")`
   возвращает непустое имя ≤247 байт UTF-8 (регресс воспроизведённого бага);
   длинное имя с расширением сохраняет расширение; dotfile проходит без
   искажений
-- [ ] write tests (operators): коллизия dotfile → `.bashrc_1`; существующие
+- [x] write tests (operators): коллизия dotfile → `.bashrc_1`; существующие
   тесты `resolve_collisions` проходят без изменений контракта
-- [ ] run tests — must pass before task 4
+- [x] run tests — must pass before task 4
 
 ### Task 4: Контракт пустого attachmentId (mime ↔ hook)
 

@@ -97,11 +97,10 @@ def resolve_collisions(
 def _first_free_name(name: str, occupied: set[str]) -> str:
     if name not in occupied:
         return name
-    stem, dot, ext = name.rpartition(".")
-    if dot:
-        prefix, suffix = stem, f".{ext}"
-    else:
-        prefix, suffix = name, ""
+    # ``os.path.splitext`` (the same splitter as ``mime._cap_filename_length``)
+    # keeps a dotfile like ``.bashrc`` whole as the stem, so its collision name
+    # is ``.bashrc_1`` rather than ``_1.bashrc``.
+    prefix, suffix = os.path.splitext(name)
     counter = 1
     while True:
         candidate = f"{prefix}_{counter}{suffix}"

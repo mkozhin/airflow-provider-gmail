@@ -142,6 +142,34 @@ def test_sanitize_absurd_extension_capped_whole():
     assert len(result.encode("utf-8")) <= 255
 
 
+def test_sanitize_long_extensionless_name_not_dropped_to_empty():
+    # Regression: a long name with NO extension (130 Cyrillic chars = 260 bytes,
+    # over the 247-byte budget) used to split with rpartition(".") into an empty
+    # stem and cap down to "" — silent data loss. os.path.splitext keeps the
+    # whole name as the stem, so the truncated result is non-empty.
+    name = "а" * 130
+    result = sanitize_filename(name, "attachment_1")
+    assert result != ""
+    assert result != "attachment_1"  # a real (truncated) name, not the fallback
+    assert len(result.encode("utf-8")) <= 247
+    assert set(result) == {"а"}
+
+
+def test_sanitize_long_name_with_extension_keeps_extension():
+    # A long name with an extension keeps that extension after truncation.
+    name = "b" * 300 + ".csv"
+    result = sanitize_filename(name, "attachment_0")
+    assert result.endswith(".csv")
+    assert len(result.encode("utf-8")) <= 255
+    assert result.startswith("b")
+
+
+def test_sanitize_dotfile_passes_through_undistorted():
+    # A short dotfile (leading dot, no extension) is under the cap and is not
+    # split into a bare extension — it passes through unchanged.
+    assert sanitize_filename(".bashrc", "attachment_0") == ".bashrc"
+
+
 # --------------------------------------------------------------------------
 # iter_attachments
 # --------------------------------------------------------------------------
