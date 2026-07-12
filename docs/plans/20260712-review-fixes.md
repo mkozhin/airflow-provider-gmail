@@ -477,11 +477,13 @@
 
 ### Task 13: [Final] Update documentation
 
-- [ ] CHANGELOG.md: раздел с фиксами (English), включая поведенческие
-  изменения (inline-фильтр, .eml, labelIds-dedup, sensor run_id)
-- [ ] AGENTS.md: обновить «Domain traps», если формулировки про label-dedup
-  устарели
-- [ ] переместить этот план в `docs/plans/completed/`
+- [x] CHANGELOG.md: раздел с фиксами (English), включая поведенческие
+  изменения (inline-фильтр, .eml, labelIds-dedup, sensor run_id) — добавлен
+  под `[Unreleased]` (Changed / Fixed / Documentation)
+- [x] AGENTS.md: обновить «Domain traps», если формулировки про label-dedup
+  устарели — добавлен буллет про labelIds-фильтрацию (не `-label:`)
+- [x] переместить этот план в `docs/plans/completed/` — harness moves the plan
+  after all phases (not moved here)
 
 ## Post-Completion
 
