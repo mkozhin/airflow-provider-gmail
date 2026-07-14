@@ -35,25 +35,34 @@ WARNING — PAUSE the daily DAG before running this backfill over a shared prefi
   shared prefix, PAUSE the daily DAG (and let any in-flight run finish).
 """
 
-from __future__ import annotations
+from datetime import datetime, timedelta, timezone
 
-import pendulum
-from airflow import DAG
+from airflow.decorators import dag
 
 from airflow_provider_gmail.operators.gmail import GmailAttachmentsToS3Operator
 
 BUCKET = "my-data-lake"
 PREFIX = "gmail/avito"  # must match the daily DAG's prefix (same namespace)
 
-with DAG(
+
+@dag(
     dag_id="example_gmail_s3_backfill",
     schedule=None,  # manual trigger only
-    start_date=pendulum.datetime(2026, 7, 1, tz="UTC"),
+    start_date=datetime(2026, 7, 1, tzinfo=timezone.utc),
     catchup=False,
     max_active_runs=1,  # serialize replays over the same prefix
+    default_args={
+        "owner": "data-team",
+        # Retrying is safe: with overwrite=True the replay re-downloads and
+        # re-delivers unconditionally, so a retried attempt just repeats the same
+        # forced re-processing.
+        "retries": 2,
+        "retry_delay": timedelta(minutes=5),
+    },
     tags=["gmail", "s3", "backfill", "example"],
-) as dag:
-    replay = GmailAttachmentsToS3Operator(
+)
+def example_gmail_s3_backfill():
+    GmailAttachmentsToS3Operator(
         task_id="replay_to_s3",
         source="avito",
         gmail_conn_id="gmail_default",
@@ -74,3 +83,6 @@ with DAG(
         mark_processed=False,  # S3 correctness is the manifest, not labels
         timezone="Europe/Moscow",
     )
+
+
+example_gmail_s3_backfill()

@@ -25,29 +25,60 @@ Non-idempotency (by design):
   window merely reduces repeats, it does not remove them.
 """
 
-from __future__ import annotations
-
+import logging
 import shutil
+from datetime import datetime, timedelta, timezone
 
-import pendulum
-from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.decorators import dag, task
 from airflow.utils.trigger_rule import TriggerRule
 
 from airflow_provider_gmail.operators.gmail import GmailAttachmentsToLocalOperator
 
+log = logging.getLogger(__name__)
+
 LOCAL_PATH = "/data/gmail/avito"
 
-with DAG(
+
+@dag(
     dag_id="example_gmail_to_local",
-    schedule="0 6 * * *",
-    start_date=pendulum.datetime(2026, 7, 1, tz="UTC"),
+    schedule="0 6 * * *",  # 06:00 UTC daily
+    start_date=datetime(2026, 7, 1, tzinfo=timezone.utc),
     catchup=False,
     # Single active run: the local disk is shared state within this one worker,
     # and overlapping runs writing the same paths would race.
     max_active_runs=1,
+    default_args={
+        "owner": "data-team",
+        # A retry re-downloads and overwrites the same files (the local operator
+        # keeps no dedup state); overwriting is safer than leaving a partial write.
+        "retries": 2,
+        "retry_delay": timedelta(minutes=5),
+    },
     tags=["gmail", "local", "example"],
-) as dag:
+)
+def example_gmail_to_local():
+    @task
+    def parse_attachments(manifests):
+        """Stub layer-2 parsing step. Receives the manifest paths the operator
+        returned (via the TaskFlow data dependency)."""
+        log.info("would parse manifests: %s", manifests)
+
+    @task(trigger_rule=TriggerRule.ALL_DONE)
+    def cleanup_local_files():
+        """Remove the downloaded files. Cleanup is the DAG's job, not the
+        operator's — the operator does not care what happens to the files.
+
+        ``all_done``: always free the disk, even if parsing failed. Otherwise a
+        failed parse would leave files behind and eventually fill the disk.
+
+        Note: this wipes the WHOLE base path (every ``dt=`` partition under
+        ``LOCAL_PATH``), not just this run's partition. That is fine here because
+        the base path is dedicated to this DAG and each run parses before cleanup;
+        scope the rmtree to the run's ``dt=`` subdirectory if you share the path.
+        """
+        shutil.rmtree(LOCAL_PATH, ignore_errors=True)
+        log.info("cleaned up %s", LOCAL_PATH)
+
     download = GmailAttachmentsToLocalOperator(
         task_id="download_to_local",
         source="avito",  # manifest "source" / trace label
@@ -63,34 +94,8 @@ with DAG(
         timezone="Europe/Moscow",
     )
 
-    def _parse_attachments(**context):
-        """Stub layer-2 parsing step. Reads manifest paths from XCom."""
-        manifests = context["ti"].xcom_pull(task_ids="download_to_local")
-        print(f"would parse manifests: {manifests}")
+    # download → parse (manifest paths flow in) → cleanup (all_done).
+    parse_attachments(download.output) >> cleanup_local_files()
 
-    parse = PythonOperator(
-        task_id="parse_attachments",
-        python_callable=_parse_attachments,
-    )
 
-    def _cleanup(**context):
-        """Remove the downloaded files. Cleanup is the DAG's job, not the
-        operator's — the operator does not care what happens to the files.
-
-        Note: this wipes the WHOLE base path (every ``dt=`` partition under
-        ``LOCAL_PATH``), not just this run's partition. That is fine here because
-        the base path is dedicated to this DAG and each run parses before cleanup;
-        scope the rmtree to the run's ``dt=`` subdirectory if you share the path.
-        """
-        shutil.rmtree(LOCAL_PATH, ignore_errors=True)
-        print(f"cleaned up {LOCAL_PATH}")
-
-    cleanup = PythonOperator(
-        task_id="cleanup_local_files",
-        python_callable=_cleanup,
-        # all_done: always free the disk, even if parsing failed. Otherwise a
-        # failed parse would leave files behind and eventually fill the disk.
-        trigger_rule=TriggerRule.ALL_DONE,
-    )
-
-    download >> parse >> cleanup
+example_gmail_to_local()

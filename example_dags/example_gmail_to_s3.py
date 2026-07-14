@@ -15,21 +15,24 @@ Why the *storage-aware* ``GmailAttachmentToS3Sensor`` and not the plain
   which is exactly what gates a delivery pipeline.
 """
 
-from __future__ import annotations
+import logging
+from datetime import datetime, timedelta, timezone
 
-import pendulum
-from airflow import DAG
+from airflow.decorators import dag, task
 
 from airflow_provider_gmail.operators.gmail import GmailAttachmentsToS3Operator
 from airflow_provider_gmail.sensors.gmail import GmailAttachmentToS3Sensor
 
+log = logging.getLogger(__name__)
+
 BUCKET = "my-data-lake"
 PREFIX = "gmail/avito"  # one prefix == one export (ADR-0003)
 
-with DAG(
+
+@dag(
     dag_id="example_gmail_to_s3",
-    schedule="0 6 * * *",
-    start_date=pendulum.datetime(2026, 7, 1, tz="UTC"),
+    schedule="0 6 * * *",  # 06:00 UTC daily
+    start_date=datetime(2026, 7, 1, tzinfo=timezone.utc),
     catchup=False,
     # max_active_runs=1 is mandatory, not cosmetic. Dedup is a check-then-act:
     # the operator reads _manifest.json and only then writes. Two overlapping
@@ -38,8 +41,28 @@ with DAG(
     # run"; only max_active_runs=1 serializes the check and the act. This is a
     # DAG-level guarantee the operator cannot make on its own.
     max_active_runs=1,
+    default_args={
+        "owner": "data-team",
+        # Retrying is safe in S3 mode: delivery is idempotent via the manifest +
+        # run_id (ADR-0001), so a retried attempt re-delivers the same path, never
+        # a duplicate.
+        "retries": 2,
+        "retry_delay": timedelta(minutes=5),
+    },
     tags=["gmail", "s3", "example"],
-) as dag:
+)
+def example_gmail_to_s3():
+    @task
+    def parse_attachments(manifests):
+        """Stub for the layer-2 parsing step (outside this provider).
+
+        The operator returns the manifest paths of the messages processed in this
+        run; the TaskFlow API hands them here as ``manifests``. A real task would
+        read each _manifest.json, parse the .xlsx, and load rows into
+        BigQuery/PostgreSQL/etc.
+        """
+        log.info("would parse manifests: %s", manifests)
+
     wait_for_email = GmailAttachmentToS3Sensor(
         task_id="wait_for_email",
         source="avito",  # free-form trace label, also the manifest "source"
@@ -76,21 +99,10 @@ with DAG(
         timezone="Europe/Moscow",  # the `dt=` partition day is computed here
     )
 
-    def _parse_attachments(**context):
-        """Stub for the layer-2 parsing step (outside this provider).
+    # Sensor gates the download; the download's return value (manifest paths)
+    # flows into the parse task as a TaskFlow data dependency.
+    wait_for_email >> download
+    parse_attachments(download.output)
 
-        The operator pushes the manifest paths of the messages processed in this
-        run to XCom. A real task would read each _manifest.json, parse the .xlsx,
-        and load rows into BigQuery/PostgreSQL/etc.
-        """
-        manifests = context["ti"].xcom_pull(task_ids="download_to_s3")
-        print(f"would parse manifests: {manifests}")
 
-    from airflow.operators.python import PythonOperator
-
-    parse = PythonOperator(
-        task_id="parse_attachments",
-        python_callable=_parse_attachments,
-    )
-
-    wait_for_email >> download >> parse
+example_gmail_to_s3()
