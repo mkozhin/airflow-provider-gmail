@@ -1,19 +1,11 @@
 # Changelog
 
-All notable changes to `airflow-provider-gmail` are documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-Versions are derived from git tags via `setuptools-scm`, and the publish workflow
-releases to PyPI on a version tag.
-
-## [Unreleased]
-
-Fixes from a deep code review. Several change delivery behavior — review the
-**Changed** entries before upgrading.
+## [0.2.0] - 2026-07-14
 
 ### Changed
 
+- **License changed from Apache-2.0 to MIT.** Package metadata (author,
+  description, and project URLs) aligned with the other providers.
 - **Inline-attachment filter now drops only inline images.** A part is dropped
   only when it is both `inline` *and* `image/*`; the previous "or it has a
   `Content-ID`" branch is gone. Inline non-images (real PDFs, xlsx) that carry a
@@ -39,9 +31,10 @@ Fixes from a deep code review. Several change delivery behavior — review the
 ### Fixed
 
 - **Structured query field values with Gmail metacharacters are now quoted.** A
-  value is quoted unless it matches the safe pattern `^[\w.@+-]+$` (Unicode), so
-  values like `re:invoice`, `{urgent}`, or `(a)` are no longer parsed as Gmail
-  operators. Plain tokens and single-word Cyrillic stay unquoted.
+  value is quoted unless it matches the safe pattern `^[\w.@+-]+\Z` (Unicode), so
+  values like `re:invoice`, `{urgent}`, `(a)`, or a value with a trailing newline
+  are no longer parsed as / smuggled past Gmail operators. Plain tokens and
+  single-word Cyrillic stay unquoted.
 - **Empty `attachmentId` with no data now fails loudly.** A part whose body has
   no usable source (falsy `attachmentId` and no `data` key) is no longer treated
   as an attachment, and `download_attachment` raises `AirflowException` instead of
@@ -61,6 +54,9 @@ Fixes from a deep code review. Several change delivery behavior — review the
   does **not** serialize a backfill against a daily DAG over the same prefix —
   pause the daily DAG before backfilling to avoid double delivery / a lost
   manifest.
+- **Example DAGs modernized to the TaskFlow API** (`@dag`/`@task`), with
+  `default_args` (`owner`, `retries`), `logging` instead of `print`, and stdlib
+  `datetime` instead of `pendulum`.
 
 ## [0.1.0] - 2026-07-12
 
@@ -98,5 +94,6 @@ disk). Parsing files is out of scope by design.
 - Example DAGs (`example_dags/`): daily S3 pull, local download → parse → cleanup,
   and a sensor-less S3 backfill with `overwrite=True`.
 
-[Unreleased]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mkozhin/airflow-provider-gmail/releases/tag/v0.1.0
