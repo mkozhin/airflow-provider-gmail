@@ -384,20 +384,20 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
 - Create: `src/airflow_provider_gmail/operators/resolve.py`,
   `tests/test_operator_resolve.py`
 
-- [ ] тонкая обёртка над `resolve_attachments`: параметры `manifests`
+- [x] тонкая обёртка над `resolve_attachments`: параметры `manifests`
   (XCom download-оператора), `pick`, `aws_conn_id`;
   `template_fields = ("manifests", "pick")`; return → XCom
   (`get_provider_info()` не трогаем: ключа `python-modules` в нём нет,
   операторы регистрации в provider_info не требуют — импортируются
   пользователем напрямую)
-- [ ] write tests (codex-ревью 2026-07-21 — success И error):
+- [x] write tests (codex-ревью 2026-07-21 — success И error):
   success — execute → список URI (мок `S3Hook`), XCom-структура;
   делегирование — `manifests`/`pick`/`aws_conn_id` доходят до
   `resolve_attachments` ровно как переданы (мок функции); состав
   `template_fields` == `("manifests", "pick")`; пустой вход → `[]` в XCom;
   error — неизвестный `pick` → `ValueError` наверх (таск красный),
   `ManifestError` из `resolve_attachments` → наверх (не глотается)
-- [ ] run tests - must pass before next task
+- [x] run tests - must pass before next task
 
 ### Task 4: [Final] Документация, примеры, changelog
 
