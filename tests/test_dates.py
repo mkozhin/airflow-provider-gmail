@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from airflow_provider_gmail import dates
 from airflow_provider_gmail.dates import from_local_iso, to_local_iso
 
 MSK = "Europe/Moscow"
@@ -153,8 +154,41 @@ def test_malformed_string_raises_valueerror(value):
     ],
 )
 def test_non_str_input_raises_valueerror(value):
-    # A non-str input must surface as the normalized ValueError, not leak the
-    # raw AttributeError/TypeError from ``.endswith``/``fromisoformat``. The Z
-    # normalization must not run outside the try/except and regress this.
+    # A non-str input must surface as the normalized ValueError. This is
+    # guaranteed by the explicit ``isinstance(value, str)`` guard at the top of
+    # ``from_local_iso`` (raised before any parsing), independently of the now
+    # narrow ``except ValueError`` around the parse.
     with pytest.raises(ValueError, match="ISO 8601"):
         from_local_iso(value)
+
+
+# -- internal errors are not masked as ValueError ----------------------------
+
+
+def test_internal_attributeerror_propagates(monkeypatch):
+    # After narrowing the parse ``except`` to ``ValueError`` only, an unexpected
+    # AttributeError from inside the try (e.g. a future typo like
+    # ``datetime.fromisoformatt``) must PROPAGATE, not be masked as a ValueError
+    # "bad input". Rebind the module-level ``datetime`` name (its stdlib class is
+    # an immutable C type, so ``setattr`` on ``dates.datetime`` would fail).
+    class Fake:
+        @staticmethod
+        def fromisoformat(value):
+            raise AttributeError("boom")
+
+    monkeypatch.setattr(dates, "datetime", Fake)
+    with pytest.raises(AttributeError):
+        from_local_iso("2026-07-10T09:14:22+00:00")
+
+
+def test_internal_typeerror_propagates(monkeypatch):
+    # Likewise a TypeError from inside the try must propagate rather than be
+    # converted into a ValueError.
+    class Fake:
+        @staticmethod
+        def fromisoformat(value):
+            raise TypeError("boom")
+
+    monkeypatch.setattr(dates, "datetime", Fake)
+    with pytest.raises(TypeError):
+        from_local_iso("2026-07-10T09:14:22+00:00")
