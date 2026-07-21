@@ -165,11 +165,11 @@ timezone-aware … naive», хотя вход НЕ naive.
 
 ### Task 3: [Final] Update documentation
 
-- [ ] README.md / README_RU.md — правок не требуется (внутренняя деталь
+- [x] README.md / README_RU.md — правок не требуется (внутренняя деталь
   парсинга, не пользовательский контракт); подтвердить и не менять
-- [ ] AGENTS.md / CONTEXT.md — новых паттернов/терминов нет; подтвердить и не
+- [x] AGENTS.md / CONTEXT.md — новых паттернов/терминов нет; подтвердить и не
   менять
-- [ ] move this plan to `docs/plans/completed/`
+- [x] move this plan to `docs/plans/completed/`
 
 ## Post-Completion
 
