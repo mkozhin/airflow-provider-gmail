@@ -122,7 +122,19 @@ def from_local_iso(value: str) -> datetime:
     This is deliberately *not* wrapped in ``ManifestError`` — that exception is
     strictly about the manifest *schema* (:meth:`Manifest.from_json`), whereas a
     missing offset is a value problem surfaced only by ``pick="latest"``.
+
+    A trailing uppercase ``Z`` (ISO 8601 Zulu = UTC) is normalized to ``+00:00``
+    before parsing: the project's floor is ``>=3.10``, but
+    :meth:`datetime.fromisoformat` only learned to accept ``Z`` in 3.11. Our own
+    :func:`to_local_iso` always writes a numeric offset (never ``Z``), yet a
+    foreign or hand-written manifest may carry ``Z`` — normalizing it lets the
+    resolver read both spellings of UTC on every supported Python and removes the
+    misleading "naive" error for what is in fact a fully aware UTC moment. Only
+    uppercase ``Z`` is normalized; a lowercase ``z`` is not valid ISO 8601 and is
+    left to raise :class:`ValueError`.
     """
+    if value.endswith("Z"):
+        value = f"{value[:-1]}+00:00"
     try:
         parsed = datetime.fromisoformat(value)
     except (ValueError, TypeError) as exc:

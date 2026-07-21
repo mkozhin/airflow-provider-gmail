@@ -126,20 +126,20 @@ timezone-aware … naive», хотя вход НЕ naive.
 - Modify: `src/airflow_provider_gmail/dates.py`
 - Modify: `tests/test_dates.py`
 
-- [ ] в `from_local_iso` (`dates.py`) первой строкой тела, ДО
+- [x] в `from_local_iso` (`dates.py`) первой строкой тела, ДО
   `datetime.fromisoformat`, добавить нормализацию хвостового заглавного `Z`:
   `if value.endswith("Z"): value = f"{value[:-1]}+00:00"` (строчный `z` НЕ
   трогаем — невалиден по ISO 8601, пусть падает `ValueError`)
-- [ ] дополнить докстринг `from_local_iso` абзацем: почему нормализуем `Z`
+- [x] дополнить докстринг `from_local_iso` абзацем: почему нормализуем `Z`
   (floor `>=3.10`, `fromisoformat` научился `Z` только в 3.11; свой
   `to_local_iso` пишет offset, но чужой манифест может нести `Z`) и что это
   убирает ложное сообщение «naive» для реального UTC
-- [ ] write tests (success, `test_dates.py`): `...T09:14:22Z` парсится как
+- [x] write tests (success, `test_dates.py`): `...T09:14:22Z` парсится как
   aware-UTC, `utcoffset().total_seconds() == 0`, равен
   `from_local_iso("...T09:14:22+00:00")`; `09:00:00Z` ==
   `12:00:00+03:00` как один момент; микросекунды + `Z`
   (`...T09:14:22.123456Z`) парсятся
-- [ ] write tests (edge/error, `test_dates.py`): malformed-строка,
+- [x] write tests (edge/error, `test_dates.py`): malformed-строка,
   оканчивающаяся на `Z` (`"not-a-dateZ"`) и голый `"Z"`, по-прежнему →
   `ValueError` (нормализация не маскирует мусор — plan-review #2); строчный
   `z` (`"2026-07-10T09:14:22z"`) → `ValueError` (фиксируем границу «только
@@ -147,7 +147,7 @@ timezone-aware … naive», хотя вход НЕ naive.
   case-insensitive не расширил контракт молча — plan-review #1); подтвердить,
   что существующие naive/malformed/round-trip тесты остаются зелёными без
   правок
-- [ ] run tests - must pass before next task
+- [x] run tests - must pass before next task
 
 ### Task 2: Verify acceptance criteria
 
