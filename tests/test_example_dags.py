@@ -14,6 +14,7 @@ import pytest
 from airflow.models.dagbag import DagBag
 
 from airflow_provider_gmail.operators.gmail import GmailAttachmentsToS3Operator
+from airflow_provider_gmail.operators.resolve import GmailResolveAttachmentsOperator
 from airflow_provider_gmail.sensors.gmail import (
     GmailAttachmentSensor,
     GmailAttachmentToS3Sensor,
@@ -57,6 +58,27 @@ def test_s3_dag_serializes_runs_and_gates_on_storage_aware_sensor(
     # Exactly the storage-aware sensor, not the plain Gmail-only one: the plain
     # sensor would fire again on already-processed messages (mark_processed=False).
     assert type(sensors[0]) is GmailAttachmentToS3Sensor
+
+
+def test_s3_dag_wires_the_full_download_resolve_parse_chain(dagbag: DagBag) -> None:
+    dag = dagbag.dags["example_gmail_to_s3"]
+
+    # The full recommended chain is present: sensor → download → resolve → parse.
+    task_ids = set(dag.task_dict)
+    assert {"wait_for_email", "download_to_s3", "resolve", "parse_attachments"} <= task_ids
+
+    resolve = dag.get_task("resolve")
+    # The resolver is the declarative operator, not a hand-rolled task.
+    assert type(resolve) is GmailResolveAttachmentsOperator
+
+    download = dag.get_task("download_to_s3")
+    parse = dag.get_task("parse_attachments")
+
+    # resolve is downstream of download and upstream of the parse step, so the
+    # attachment URIs it produces are what the layer-2 consumer receives.
+    assert "resolve" in download.downstream_task_ids
+    assert "download_to_s3" in resolve.upstream_task_ids
+    assert "parse_attachments" in resolve.downstream_task_ids
 
 
 def test_backfill_dag_overwrites_and_has_no_storage_aware_sensor(

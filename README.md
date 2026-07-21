@@ -31,8 +31,11 @@ produce an "operator that does everything" with a combinatorial explosion of
 parameters.
 
 The join point with layer 2 is the `_manifest.json` file the provider writes next
-to the attachments; its path is what the operator returns in XCom. Layer 2 reads
-the manifest and does not care where the file came from.
+to the attachments; the operator returns the **full path** of that manifest in
+XCom (an `s3://<bucket>/<key>` URI, or an absolute path in local mode). Layer 2
+reads the manifest — or, more simply, lets the built-in **resolver** turn those
+manifest paths into a flat list of full attachment paths — and does not care
+where the file came from (see *Resolving attachments*).
 
 ### What it solves
 
@@ -54,6 +57,8 @@ GmailAttachmentSensor                # is there a matching email? (Gmail only)
 GmailAttachmentsBaseOperator         # abstract: search, select, manifest, label
   ├─ GmailAttachmentsToS3Operator    # + bucket/prefix/aws_conn_id, dedup, overwrite
   └─ GmailAttachmentsToLocalOperator # + path, no dedup, always overwrites
+GmailResolveAttachmentsOperator      # manifest paths → flat list of attachment paths
+resolve_attachments()                # the same, as a function for the TaskFlow API
 ```
 
 The S3 operator works against any S3-compatible store (Yandex Object Storage,
@@ -317,25 +322,75 @@ loud `ManifestError` rather than being silently skipped.
 
 ## What goes to XCom
 
-The operator returns **only the canonical paths of the manifests** of the messages
+The operator returns **only the full paths of the manifests** of the messages
 processed **in this run** — nothing else.
 
-- `bucket` and `aws_conn_id` are **deliberately not** put in XCom. The next task (if
-  any) takes them from its own parameters: its `conn_id` is usually the same, and
-  the bucket is typically a `Variable` set at the top of the DAG and passed into
-  every task.
-- No structured URI or object is introduced — that would be premature
-  generalization for a layer that may not even exist yet.
+- In S3 mode each path is a full `s3://<bucket>/<key>` URI; in local mode it is an
+  absolute disk path. The contract is uniformly "a list of full manifest paths",
+  so a consumer never has to source the bucket out of band. (Before 0.3.0 the S3
+  operator returned bare object keys — a breaking change, see the CHANGELOG.)
+- **The URI still needs the consumer's `aws_conn_id`.** An `s3://bucket/key` URI
+  names the object *within a store*, but the store's `endpoint_url` and
+  credentials live in the Amazon Connection, not in the URI. The downstream task
+  (the resolver, or your own) takes `aws_conn_id` from its own parameter — usually
+  the same one — and the bucket is read straight off the URI.
+- No richer structured object is introduced: a full path is exactly what a
+  consumer needs, and the manifest schema (`files[].path`) is deliberately left as
+  keys / absolute paths so layer 2 never learns where a file came from.
+
+## Resolving attachments
+
+Reading each `_manifest.json` yourself is a supported contract, but the provider
+ships the **official client** of that contract so a consumer does not have to know
+the manifest schema at all: it turns the download operator's XCom (a list of
+manifest paths) into a **flat list of full attachment paths**.
+
+Two faces, same logic:
+
+- **`resolve_attachments(manifests, pick="all", aws_conn_id="aws_default")`** — a
+  function, for the TaskFlow API.
+- **`GmailResolveAttachmentsOperator`** (`operators.resolve`) — a thin operator
+  wrapper with template fields `manifests` and `pick`, for declarative DAGs.
+
+`pick` selects which messages contribute attachments:
+
+- **`"all"`** (default) — every manifest's attachments, in input order.
+- **`"latest"`** — only the attachments of the single most-recent manifest by
+  `internal_date` (compared as aware moments, tie-broken by `message_id`). Use it
+  when the same report may arrive more than once and you want only the newest.
+
+The recommended layer-1 → layer-2 chain wires the resolver between the download
+and the parse; a layer-2 operator such as `TableFileToS3Operator` then takes the
+resolved paths as its `input_paths` and never touches a manifest:
+
+```python
+download = GmailAttachmentsToS3Operator(...)          # → [s3://.../_manifest.json, ...]
+resolve = GmailResolveAttachmentsOperator(
+    task_id="resolve", manifests=download.output, pick="latest")  # → [s3://.../report.xlsx, ...]
+parse = TableFileToS3Operator(input_paths=resolve.output, ...)    # layer 2, another provider
+download >> resolve >> parse
+```
+
+The resolver does **not** repair or second-guess its input: duplicate manifests
+pass through as given, and a **missing** manifest (a good path but no object —
+deleted, retention, or an `aws_conn_id` pointing at the wrong store) or a
+**broken** one raises loudly (the storage error / `ManifestError`) rather than
+silently yielding a short list. An empty input list yields an empty list; `None`
+(e.g. an `xcom_pull` on the wrong `task_id`) raises `TypeError` rather than a
+forever-green empty pipeline. A purely-local input never imports the Amazon
+provider (the `s3` extra is not required).
 
 ## Example DAGs
 
 See `example_dags/`:
 
 - **`example_gmail_to_s3.py`** — the standard daily pull:
-  `GmailAttachmentToS3Sensor` → `GmailAttachmentsToS3Operator` → a stub parse task,
-  `mark_processed=False`, `max_active_runs=1` (with a comment on the check-then-act
-  race). The plain `GmailAttachmentSensor` must **not** be used here — with labels
-  off it would re-fire on an already-processed message.
+  `GmailAttachmentToS3Sensor` → `GmailAttachmentsToS3Operator` →
+  `GmailResolveAttachmentsOperator` → a stub parse task, `mark_processed=False`,
+  `max_active_runs=1` (with a comment on the check-then-act race). Shows the
+  resolver wired between download and parse. The plain `GmailAttachmentSensor`
+  must **not** be used here — with labels off it would re-fire on an
+  already-processed message.
 - **`example_gmail_to_local.py`** — download → parse → cleanup (`all_done`), with the
   worker-limit constraint and the non-idempotency spelled out.
 - **`example_gmail_s3_backfill.py`** — a manual replay with `overwrite=True` and

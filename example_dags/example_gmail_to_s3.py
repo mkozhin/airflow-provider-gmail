@@ -1,7 +1,16 @@
 """Example: Gmail attachments → S3, the standard daily pull.
 
-Flow: ``GmailAttachmentToS3Sensor`` → ``GmailAttachmentsToS3Operator`` → a stub
-parsing task. This is the recommended shape for a recurring S3 export.
+Flow: ``GmailAttachmentToS3Sensor`` → ``GmailAttachmentsToS3Operator`` →
+``GmailResolveAttachmentsOperator`` → a stub parsing task. This is the
+recommended shape for a recurring S3 export.
+
+The resolver sits between the download and the parse: the download emits the
+manifest paths (full ``s3://<bucket>/<key>`` URIs) of the messages processed in
+this run, and ``GmailResolveAttachmentsOperator`` expands them into a flat list
+of full attachment URIs — the recommended way for a layer-2 consumer (e.g.
+``airflow-provider-tablefile``) to get files without knowing the manifest
+schema. In a real DAG ``parse_attachments`` would be a ``TableFileToS3Operator``
+taking ``resolve.output`` as its ``input_paths``.
 
 Why the *storage-aware* ``GmailAttachmentToS3Sensor`` and not the plain
 ``GmailAttachmentSensor``:
@@ -21,6 +30,7 @@ from datetime import datetime, timedelta, timezone
 from airflow.decorators import dag, task
 
 from airflow_provider_gmail.operators.gmail import GmailAttachmentsToS3Operator
+from airflow_provider_gmail.operators.resolve import GmailResolveAttachmentsOperator
 from airflow_provider_gmail.sensors.gmail import GmailAttachmentToS3Sensor
 
 log = logging.getLogger(__name__)
@@ -53,15 +63,16 @@ PREFIX = "gmail/avito"  # one prefix == one export (ADR-0003)
 )
 def example_gmail_to_s3():
     @task
-    def parse_attachments(manifests):
+    def parse_attachments(attachment_uris):
         """Stub for the layer-2 parsing step (outside this provider).
 
-        The operator returns the manifest paths of the messages processed in this
-        run; the TaskFlow API hands them here as ``manifests``. A real task would
-        read each _manifest.json, parse the .xlsx, and load rows into
-        BigQuery/PostgreSQL/etc.
+        The resolver returns a flat list of full attachment URIs
+        (``s3://<bucket>/<key>``); the TaskFlow API hands them here as
+        ``attachment_uris``. A real task would be a ``TableFileToS3Operator``
+        (or similar) taking this list as ``input_paths`` to parse each .xlsx and
+        load rows into BigQuery/PostgreSQL/etc. — it never has to read a manifest.
         """
-        log.info("would parse manifests: %s", manifests)
+        log.info("would parse attachments: %s", attachment_uris)
 
     wait_for_email = GmailAttachmentToS3Sensor(
         task_id="wait_for_email",
@@ -99,10 +110,25 @@ def example_gmail_to_s3():
         timezone="Europe/Moscow",  # the `dt=` partition day is computed here
     )
 
-    # Sensor gates the download; the download's return value (manifest paths)
-    # flows into the parse task as a TaskFlow data dependency.
-    wait_for_email >> download
-    parse_attachments(download.output)
+    resolve = GmailResolveAttachmentsOperator(
+        task_id="resolve",
+        # download.output is the list of manifest URIs (s3://bucket/key) of the
+        # messages processed this run; the resolver reads each and returns the
+        # flat list of full attachment URIs. A template field, so the XComArg is
+        # rendered before execute runs.
+        manifests=download.output,
+        # pick="all" (the default): every message's attachments, in input order.
+        # Use pick="latest" to keep only the attachments of the single most-recent
+        # message (by internal_date) when the same report arrives more than once.
+        pick="all",
+        aws_conn_id="aws_default",  # reads the s3:// manifests; endpoint lives here
+    )
+
+    # Sensor gates the download; the download's return value (manifest URIs) feeds
+    # the resolver, and the resolver's return value (attachment URIs) flows into
+    # the parse task as a TaskFlow data dependency.
+    wait_for_email >> download >> resolve
+    parse_attachments(resolve.output)
 
 
 example_gmail_to_s3()

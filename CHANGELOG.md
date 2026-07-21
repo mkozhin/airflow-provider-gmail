@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.3.0] - 2026-07-21
+
+### Changed
+
+- **BREAKING: XCom now carries full paths, not bare object keys.** The download
+  operators return the paths of the `_manifest.json` files of the messages
+  processed in this run as **full** paths: `GmailAttachmentsToS3Operator` returns
+  `s3://<bucket>/<key>` URIs (previously bare keys with no bucket or scheme), and
+  `GmailAttachmentsToLocalOperator` continues to return absolute local paths — so
+  the XCom contract is uniformly "a list of full manifest paths". A consumer no
+  longer has to source the bucket out of band. The URI addresses the object only
+  in tandem with the consumer's `aws_conn_id`: the endpoint lives in the
+  Connection, not in the URI. The manifest schema is unchanged — `files[].path`
+  stays an object key / absolute path (layer-2 contract, ADR-0001); only
+  `execute()`'s return value is re-anchored (via the new `_xcom_path` seam,
+  ADR-0006/ADR-0007). Update any task that reads the download's XCom and expected
+  a bare key.
+- **BREAKING: attachment filenames and prefixes are hardened for URL-safe keys.**
+  `sanitize_filename` now replaces every character from S3's "characters to
+  avoid" set plus `?` and the quotes (`? # % { } ^ [ ] < > ~ | " ` + backtick)
+  with `_`, so produced object keys are URL-safe by construction and a
+  third-party `s3://` URL parser works on them. `\` and `/` are unaffected (the
+  basename step already strips them, so `a\b\c.xlsx → c.xlsx` is preserved).
+  Attachments downloaded from now on get these new object names; and a rendered
+  `prefix` carrying any of those characters is now **rejected** with a
+  `ValueError` at the top of `execute()`/`poke()` (previously such a prefix was
+  silently allowed). `files[].name` in the manifest still stores the original
+  attachment name.
+
+### Added
+
+- **Manifest resolver — the official client of the `_manifest.json` contract.**
+  `resolve_attachments(manifests, pick="all", aws_conn_id="aws_default")` expands
+  a list of full manifest paths (the download operator's XCom) into a flat list
+  of full attachment paths (`s3://<bucket>/<key>` URIs or absolute local paths) a
+  layer-2 consumer (e.g. `airflow-provider-tablefile`) can open without knowing
+  the manifest schema. `pick="all"` (default) returns every manifest's
+  attachments in input order; `pick="latest"` returns only the attachments of the
+  single most-recent manifest by `internal_date` (compared as aware moments,
+  tie-broken by `message_id`). Reading a manifest is lazy: a purely-local input
+  never imports the Amazon provider, and one `S3Hook` is created per call and
+  reused. A broken manifest raises `ManifestError`, a missing one raises its
+  natural storage error — neither is swallowed. Direct manifest reads (as the
+  realcombi prod DAG does today) remain a supported contract; the resolver is the
+  recommended path.
+- **`GmailResolveAttachmentsOperator`** — the declarative-DAG face of
+  `resolve_attachments` (template fields `manifests`, `pick`), for wiring
+  `download >> resolve >> parse` without the TaskFlow API.
+- **`dates.from_local_iso(value)`** — parses an `internal_date` ISO string back to
+  an aware `datetime` (a naive string raises `ValueError`); used by the resolver's
+  `pick="latest"`.
+- **URI helpers in `utils/paths.py`** — `s3_uri(bucket, *segments)`,
+  `split_s3_uri(uri)` and `is_s3_uri(uri)`, the single owner of the `s3://`
+  literal in `src`.
+
 ## [0.2.0] - 2026-07-14
 
 ### Changed
@@ -94,6 +149,7 @@ disk). Parsing files is out of scope by design.
 - Example DAGs (`example_dags/`): daily S3 pull, local download → parse → cleanup,
   and a sensor-less S3 backfill with `overwrite=True`.
 
-[Unreleased]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mkozhin/airflow-provider-gmail/releases/tag/v0.1.0

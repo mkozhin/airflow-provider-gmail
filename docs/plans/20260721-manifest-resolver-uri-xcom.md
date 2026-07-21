@@ -406,26 +406,33 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
   `docs/gmail-pipeline-layers-2-3.md`,
   `example_dags/example_gmail_to_s3.py`, `tests/test_example_dags.py`
 
-- [ ] README/README_RU: новый контракт XCom (полные пути), явно: URI
+- [x] README/README_RU: новый контракт XCom (полные пути), явно: URI
   `s3://bucket/key` адресует объект только в паре с `aws_conn_id`
   потребителя — endpoint живёт в connection, не в URI (решение грилинга
   2026-07-21); раздел про резолвер (функция + оператор, `pick`), целевая
   цепочка с `TableFileToS3Operator` как пример downstream
-- [ ] example_dags (конкретный scope, codex-ревью 2026-07-21): обновляется
+  [реализовано: секции «What goes to XCom»/«Что уходит в XCom» переписаны,
+  добавлены секции «Resolving attachments»/«Резолвинг вложений», обновлён
+  состав компонентов и стык слоёв]
+- [x] example_dags (конкретный scope, codex-ревью 2026-07-21): обновляется
   ТОЛЬКО `example_gmail_to_s3.py` — добавить resolve-таск (целевая
   цепочка, см. Solution Overview); `example_gmail_to_local.py` и
   `example_gmail_s3_backfill.py` НЕ меняются (минимальный scope: один
   демонстрационный пример резолвера достаточен)
-- [ ] CONTEXT.md: уже обновлён опережающе в ходе грилинга 2026-07-21
+  [реализовано: цепочка `download >> resolve >> parse`, resolve — task_id
+  `resolve`, parse принимает `resolve.output`]
+- [x] CONTEXT.md: уже обновлён опережающе в ходе грилинга 2026-07-21
   (термины Доставка, Резолвер, `pick`) — осознанный порядок работы
   (глоссарий фиксирует целевую модель; codex-ревью №2 отметил
   рассинхрон с кодом как временный); здесь — только сверить с фактической
   реализацией и поправить расхождения, если появились
-- [ ] `docs/gmail-pipeline-layers-2-3.md` (граница слоёв, codex-ревью
+  [сверено: Доставка/Резолвер/`pick` совпадают с реализацией — правок не
+  потребовалось]
+- [x] `docs/gmail-pipeline-layers-2-3.md` (граница слоёв, codex-ревью
   2026-07-21): резолвер — рекомендуемый путь получения файлов слоем 2;
   прямое чтение манифеста остаётся поддерживаемым контрактом (realcombi);
   схема манифеста по-прежнему неизменна
-- [ ] CHANGELOG.md: секция `## [0.3.0]` — ДВА breaking-пункта (codex-ревью
+- [x] CHANGELOG.md: секция `## [0.3.0]` — ДВА breaking-пункта (codex-ревью
   №2): (1) XCom keys → full URI; (2) ужесточение `sanitize_filename`
   (спецсимволы → `_`, новые имена объектов для будущих скачиваний) +
   валидация `prefix` (ранее допустимые prefix со спецсимволами теперь
@@ -435,14 +442,16 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
   в формате существующего файла (`https://github.com/mkozhin/...`):
   `[Unreleased]` → `compare/v0.3.0...HEAD`, добавить
   `[0.3.0]: compare/v0.2.0...v0.3.0`
-- [ ] write tests: `tests/test_example_dags.py` — DagBag импортируется без
+- [x] write tests: `tests/test_example_dags.py` — DagBag импортируется без
   ошибок; структурная проверка ПОЛНОЙ цепочки примера в
   `example_gmail_to_s3.py` (codex-ревью №2): все task_ids на месте,
   `resolve` стоит downstream от `download` и upstream от следующего таска
   цепочки (если в примере есть parse-заглушка), тип resolve-таска —
   `GmailResolveAttachmentsOperator`
-- [ ] run tests (полный прогон) - must pass
-- [ ] move this plan to `docs/plans/completed/`
+  [реализовано: `test_s3_dag_wires_the_full_download_resolve_parse_chain`]
+- [x] run tests (полный прогон) - must pass [435 passed, покрытие 99%]
+- [x] move this plan to `docs/plans/completed/` (помечено выполненным;
+  фактический перенос делает харнесс после всех фаз — не двигать вручную)
 
 ## Post-Completion
 
