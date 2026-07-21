@@ -13,9 +13,9 @@ fixtures directly and import it without mocks.
 
 from __future__ import annotations
 
-from .dates import from_local_iso
-from .manifest import Manifest
-from .utils.paths import is_s3_uri, s3_uri, split_s3_uri
+from airflow_provider_gmail.dates import from_local_iso
+from airflow_provider_gmail.manifest import Manifest
+from airflow_provider_gmail.utils.paths import is_s3_uri, s3_uri, split_s3_uri
 
 #: The accepted ``pick`` modes — validated in both the public facade and the core.
 _PICK_MODES = ("all", "latest")
