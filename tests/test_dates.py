@@ -175,11 +175,11 @@ def test_internal_error_propagates_not_masked(monkeypatch, exc):
     # ``setattr`` on ``dates.datetime`` would fail). The value is a VALID aware
     # string so the isinstance guard and ``.endswith("Z")`` do not short-circuit
     # and execution reaches the faked ``datetime.fromisoformat``.
-    class Fake:
+    class _Fake:
         @staticmethod
         def fromisoformat(value):
             raise exc("boom")
 
-    monkeypatch.setattr(dates, "datetime", Fake)
+    monkeypatch.setattr(dates, "datetime", _Fake)
     with pytest.raises(exc):
         from_local_iso("2026-07-10T09:14:22+00:00")
