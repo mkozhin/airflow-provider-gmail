@@ -170,10 +170,10 @@ return parsed
 
 ### Task 2: [Final] Подтверждение и перенос плана
 
-- [ ] README/README_RU/AGENTS/CONTEXT/CHANGELOG — правок не требуется
+- [x] README/README_RU/AGENTS/CONTEXT/CHANGELOG — правок не требуется
   (внутренняя деталь функции; код новый в невыпущенной 0.3.0); подтвердить и
   не менять
-- [ ] move this plan to `docs/plans/completed/`
+- [x] move this plan to `docs/plans/completed/`
 
 ## Post-Completion
 
