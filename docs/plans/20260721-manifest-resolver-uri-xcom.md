@@ -290,7 +290,7 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
 - Create: `src/airflow_provider_gmail/resolve.py`, `tests/test_resolve.py`
 - Update: `tests/fixtures/` (JSON-фикстуры манифестов при необходимости)
 
-- [ ] `resolve.py`: приватное ЧИСТОЕ ядро `_resolve(pairs, pick) ->
+- [x] `resolve.py`: приватное ЧИСТОЕ ядро `_resolve(pairs, pick) ->
   list[str]` (арх. грилинг 2026-07-21, кандидат 4); `pairs:
   list[(путь манифеста, Manifest)]` — внутри ядра и выбор победителя, и
   сборка полных путей вложений; ветвление — по `is_s3_uri(путь самого
@@ -301,19 +301,19 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
   пара нужна, т.к. бакет вложений берётся из пути самого манифеста; ядро
   остаётся приватным (тесты импортируют `_resolve` напрямую — внутренний
   шов)
-- [ ] `pick="latest"`: `internal_date` → aware `datetime` (через
+- [x] `pick="latest"`: `internal_date` → aware `datetime` (через
   `from_local_iso` из `dates.py` — только в этом режиме), сравнение
   моментов времени, tie-breaker `message_id`; `pick` валидируется
   (`latest|all`), иначе `ValueError`; победитель с пустым `files` → `[]`
   КАК ЕСТЬ, без fallback на следующее по дате письмо (fallback тихо
   доставил бы устаревшую версию отчёта — решение грилинга 2026-07-21)
-- [ ] дубликаты во входном списке НЕ дедуплицируются и НЕ валидируются
+- [x] дубликаты во входном списке НЕ дедуплицируются и НЕ валидируются
   (чинить или интерпретировать чужой вход — не задача резолвера, может
   быть и намеренно — решение грилинга 2026-07-21); следствия по режимам
   (codex-ревью): `all` — дубликат на входе → дубликат на выходе;
   `latest` — дубликат лишь повторный кандидат, победитель один и вложения
   возвращаются один раз; квалифицировать в докстринге
-- [ ] write tests: ЧИСТАЯ семантическая матрица на `_resolve` с фикстурами
+- [x] write tests: ЧИСТАЯ семантическая матрица на `_resolve` с фикстурами
   `Manifest`, БЕЗ моков: local-манифест (путь не `s3://`) — `files[].path`
   возвращаются как есть, `split_s3_uri` не вызывается (финальное ревью
   2026-07-21); all/latest; смесь offset'ов в `internal_date`
@@ -327,7 +327,7 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
   фикстура для этого теста собирается ВРУЧНУЮ (сырой ключ со
   спецсимволами), НЕ через новый `sanitize_filename` — иначе тест
   проверяет пустоту (финальное ревью 2026-07-21)
-- [ ] run tests - must pass before next task
+- [x] run tests - must pass before next task
 
 ### Task 2c: Публичный фасад resolve_attachments (I/O-кромка)
 
