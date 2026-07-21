@@ -221,7 +221,7 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
   `tests/test_operator_base.py`, `tests/test_operator_s3.py`,
   `tests/test_operator_local.py`, `tests/test_sensor_s3.py`
 
-- [ ] валидация `prefix` в `GmailAttachmentsToS3Operator` и
+- [x] валидация `prefix` в `GmailAttachmentsToS3Operator` и
   `GmailAttachmentToS3Sensor` — ТОЛЬКО по отрендеренному значению в
   начале `execute()`/`poke()`, как существующие `date_from`/`date_to`
   (codex-ревью №2: `prefix` — template field, Jinja-эвристика в
@@ -229,10 +229,13 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
   (финальное ревью 2026-07-21) — паритет конфиг-валидации с оператором
   (сенсор URI не эмитит, его ключи от спецсимволов в prefix не ломаются;
   ранний фейл единообразен, будущим обзорам не удалять)
-- [ ] write tests (prefix): шаблонный `prefix="{{ ds }}"` НЕ падает при
+  [реализовано: `validate_prefix` в `utils/paths.py`; S3-оператор
+  переопределяет `execute()` (валидация → `super().execute()`), S3-сенсор
+  валидирует первой строкой `poke()`]
+- [x] write tests (prefix): шаблонный `prefix="{{ ds }}"` НЕ падает при
   конструировании оператора/сенсора; невалидный отрендеренный prefix →
   `ValueError` в `execute()`/`poke()`; валидный prefix проходит
-- [ ] шов-метод `_xcom_path(rel_path)` (см. Solution Overview): в базовом
+- [x] шов-метод `_xcom_path(rel_path)` (см. Solution Overview): в базовом
   классе дефолт → `_destination_path`; в `GmailAttachmentsToS3Operator`
   override → `s3_uri(self.bucket, self.prefix, rel_path)`; ОБЕ ветки
   `delivered.append(...)` в `execute()` — `DELIVER_ONLY` (строка ~363) и
@@ -241,23 +244,25 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
   голом ключе → неконсистентный XCom между ветками); переменная
   `manifest_path` из `_destination_path` в `execute()` больше не
   вычисляется; `_destination_path` и `files[].path` манифеста НЕ трогаем
-- [ ] локальный оператор: подтвердить абсолютные пути в XCom (поведение не
+  [реализовано: `manifest_path` заменён на `manifest_xcom_path` через
+  `_xcom_path`, оба `delivered.append` переведены]
+- [x] локальный оператор: подтвердить абсолютные пути в XCom (поведение не
   меняется — наследует дефолт `_xcom_path`; только тест-фиксация контракта)
-- [ ] докстринги обновить: `_destination_path` базового класса («for the
+- [x] докстринги обновить: `_destination_path` базового класса («for the
   manifest / XCom» → теперь только манифест), докстринги классов
   `GmailAttachmentsToS3Operator` и `GmailAttachmentsToLocalOperator`
   (формулировки «manifest paths … returned in XCom»), докстринг нового
   `_xcom_path`
-- [ ] `tests/test_operator_base.py`: переработать фикстуру `_DictOperator` —
+- [x] `tests/test_operator_base.py`: переработать фикстуру `_DictOperator` —
   `_destination_path` возвращает ГОЛЫЙ ключ, `_xcom_path` — `s3://bucket/...`
   (финальное ревью 2026-07-21: если оба вернут `s3://...`, разведение
   вообще не будет протестировано); развести ассерты — `files[].path` в
   манифесте из `_destination_path` (ключ), XCom из `_xcom_path` (URI),
   включая ветку `DELIVER_ONLY`
-- [ ] write tests: S3 — XCom содержит `s3://bucket/...`-URI, а внутренние
+- [x] write tests: S3 — XCom содержит `s3://bucket/...`-URI, а внутренние
   операции и манифест — ровно те же ключи, что раньше; local — абсолютные
   пути; сенсор-тесты зелёные без правок (независимость сенсора от XCom)
-- [ ] run tests - must pass before next task
+- [x] run tests - must pass before next task
 
 ### Task 2a: from_local_iso в dates.py
 

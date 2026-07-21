@@ -45,6 +45,30 @@ S3_URI_SCHEME = "s3://"
 FORBIDDEN_KEY_CHARS = frozenset('?#%{}^[]<>~|"`')
 
 
+def validate_prefix(prefix: str) -> None:
+    """Reject a **rendered** ``prefix`` carrying URL-hostile characters.
+
+    Attachment names are already stripped of :data:`FORBIDDEN_KEY_CHARS` at the
+    source (:func:`airflow_provider_gmail.utils.mime.sanitize_filename`), but the
+    operator/sensor ``prefix`` is caller-supplied and reaches the object key
+    verbatim — a ``prefix`` with ``#`` or ``%`` would produce a key hostile to
+    third-party ``s3://`` URL parsers. Reject it so produced keys stay URL-safe
+    by construction.
+
+    Called on the **rendered** value at the top of ``execute()``/``poke()`` — not
+    in ``__init__`` — because ``prefix`` is a template field: a Jinja expression
+    such as ``{{ ds }}`` itself contains ``{``/``}`` (both forbidden), so an
+    ``__init__`` check would reject valid templates. ``/`` is allowed (a prefix is
+    a path). Raises :class:`ValueError` naming the offending characters.
+    """
+    bad = sorted(set(prefix) & FORBIDDEN_KEY_CHARS)
+    if bad:
+        raise ValueError(
+            f"prefix contains characters not allowed in an object key: "
+            f"{''.join(bad)!r} (in {prefix!r}). Remove them from the prefix."
+        )
+
+
 def join_key(*segments: str) -> str:
     """Join path segments into an S3 key, dropping empties and stray slashes.
 

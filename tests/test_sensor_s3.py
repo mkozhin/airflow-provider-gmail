@@ -195,6 +195,31 @@ def test_s3_hook_lazily_constructs_real_hook_with_aws_conn_id():
     assert sensor._s3_hook() is hook  # cached
 
 
+# -- prefix validation (rendered value, ADR-0007) ----------------------------
+
+
+def test_templated_prefix_does_not_fail_at_construction():
+    # A Jinja prefix contains { } (both forbidden) — validation must run on the
+    # rendered value in poke(), not in __init__.
+    sensor = GmailAttachmentToS3Sensor(
+        task_id="s", source="avito", bucket=BUCKET, prefix="{{ ds }}"
+    )
+    assert sensor.prefix == "{{ ds }}"
+
+
+def test_poke_invalid_rendered_prefix_raises():
+    sensor = _make_sensor({}, prefix="gmail/a#b")
+    with pytest.raises(ValueError, match="prefix"):
+        _poke(sensor, FakeGmailHook([_message("msg1", "a.xlsx")]))
+
+
+def test_poke_valid_prefix_passes():
+    store: dict = {}
+    msg = _message("msg1", "report.xlsx")
+    sensor = _make_sensor(store, prefix="gmail/avito")
+    assert _poke(sensor, FakeGmailHook([msg])) is True
+
+
 # -- poke: new work vs processed ---------------------------------------------
 
 

@@ -36,7 +36,7 @@ from airflow_provider_gmail.hooks.gmail import (
     resolve_label_name,
 )
 from airflow_provider_gmail.manifest import Manifest
-from airflow_provider_gmail.utils.paths import manifest_key
+from airflow_provider_gmail.utils.paths import manifest_key, validate_prefix
 from airflow_provider_gmail.window import Window
 
 
@@ -354,7 +354,13 @@ class GmailAttachmentToS3Sensor(GmailAttachmentSensor):
         keeps firing until the operator re-writes/completes it. A corrupt
         manifest fails the poke via :class:`ManifestError` — it is never
         silently treated as processed.
+
+        The rendered ``prefix`` is validated first (parity with the S3 operator's
+        ``execute()``, ADR-0007): the sensor emits no URI and its keys do not
+        break on a hostile ``prefix``, but rejecting bad config early keeps
+        operator and sensor uniform so a future review need not remove it.
         """
+        validate_prefix(self.prefix)
         run_id = context["run_id"]
         for msg in self._find_messages(context):
             if not self._has_processed_manifest(msg, run_id):

@@ -141,6 +141,11 @@ def _manifest_key(msg: MessageWithAttachments, prefix: str = PREFIX) -> str:
     return manifest_key(prefix, _dt(msg), msg.message_id)
 
 
+def _manifest_uri(msg: MessageWithAttachments, prefix: str = PREFIX) -> str:
+    """The full ``s3://<bucket>/<key>`` URI the operator now returns in XCom (ADR-0007)."""
+    return f"s3://{BUCKET}/{_manifest_key(msg, prefix)}"
+
+
 def _file_key(msg, filename, prefix: str = PREFIX) -> str:
     return join_key(message_dir(prefix, _dt(msg), msg.message_id), filename)
 
@@ -205,6 +210,65 @@ def test_s3_hook_lazily_constructs_real_hook_with_aws_conn_id():
     assert op._s3_hook() is hook  # cached
 
 
+# -- prefix validation (rendered value, ADR-0007) ----------------------------
+
+
+def test_templated_prefix_does_not_fail_at_construction():
+    # A Jinja prefix contains { } (both forbidden in a key), so validation must
+    # NOT run in __init__ — only on the rendered value in execute().
+    op = GmailAttachmentsToS3Operator(
+        task_id="t", source="avito", bucket=BUCKET, prefix="{{ ds }}"
+    )
+    assert op.prefix == "{{ ds }}"
+
+
+def test_execute_invalid_rendered_prefix_raises():
+    op = _make_op({}, prefix="gmail/a#b")
+    hook = FakeGmailHook([_message("msg1", "a.xlsx")])
+    with pytest.raises(ValueError, match="prefix"):
+        _run(op, hook)
+
+
+def test_execute_valid_prefix_passes():
+    store: dict = {}
+    msg = _message("msg1", "a.xlsx")
+    op = _make_op(store, prefix="gmail/avito")
+    hook = FakeGmailHook([msg])
+    result = _run(op, hook)
+    assert result == [_manifest_uri(msg)]
+
+
+# -- XCom URI vs manifest key divergence (ADR-0007) --------------------------
+
+
+def test_xcom_uri_but_internal_ops_and_manifest_use_bare_keys():
+    # XCom carries s3://bucket/key URIs, while the S3 writes, the object store
+    # keys, and the manifest's files[].path all stay bare object keys.
+    store: dict = {}
+    msg = _message("msg1", "a.xlsx")
+    op = _make_op(store)
+    hook = FakeGmailHook([msg])
+    result = _run(op, hook)
+
+    # XCom → URI
+    assert result == [_manifest_uri(msg)]
+    assert result[0].startswith("s3://")
+    # object store keyed by bare keys (no scheme)
+    assert _file_key(msg, "a.xlsx") in store
+    assert _manifest_key(msg) in store
+    assert not any(k.startswith("s3://") for k in store)
+    # manifest files[].path → bare key, not a URI
+    manifest = Manifest.from_json(store[_manifest_key(msg)])
+    assert [f.path for f in manifest.files] == [_file_key(msg, "a.xlsx")]
+
+
+def test_xcom_path_builds_uri_from_bucket_and_destination_key():
+    # _xcom_path is exactly the bucket-anchored form of _destination_path.
+    op = _make_op({}, prefix="gmail/avito")
+    rel = "dt=2026-07-12/msg1/_manifest.json"
+    assert op._xcom_path(rel) == f"s3://{BUCKET}/{op._destination_path(rel)}"
+
+
 # -- dedup tri-state ---------------------------------------------------------
 
 
@@ -226,7 +290,7 @@ def test_current_run_manifest_delivered_not_downloaded():
     op = _make_op(store)
     hook = FakeGmailHook([msg])
     result = _run(op, hook)
-    assert result == [_manifest_key(msg)]
+    assert result == [_manifest_uri(msg)]
     assert hook.downloaded == []
 
 
@@ -237,7 +301,7 @@ def test_no_manifest_downloads_and_delivers_with_expected_key_structure():
     hook = FakeGmailHook([msg])
     result = _run(op, hook)
 
-    assert result == [_manifest_key(msg)]
+    assert result == [_manifest_uri(msg)]
     assert hook.downloaded == [("msg1", "a.xlsx")]
     # keys have the <prefix>/dt=<dt>/<message_id>/... structure
     assert _file_key(msg, "a.xlsx") in store
@@ -263,7 +327,7 @@ def test_empty_attachment_yields_zero_byte_object_and_size_zero_manifest():
     hook = _EmptyHook([msg])
     result = _run(op, hook)
 
-    assert result == [_manifest_key(msg)]
+    assert result == [_manifest_uri(msg)]
     file_key = _file_key(msg, "empty.txt")
     assert store[file_key] == b""  # 0-byte object written
     manifest = Manifest.from_json(store[_manifest_key(msg)])
@@ -277,7 +341,7 @@ def test_overwrite_true_forces_download_despite_current_manifest():
     op = _make_op(store, overwrite=True)
     hook = FakeGmailHook([msg])
     result = _run(op, hook)
-    assert result == [_manifest_key(msg)]
+    assert result == [_manifest_uri(msg)]
     assert hook.downloaded == [("msg1", "a.xlsx")]  # overwrite → re-download
 
 
@@ -333,7 +397,7 @@ def test_retry_after_marked_but_not_returned_still_delivers():
     op2 = _make_op(store, mark_processed=True)
     hook2 = FakeGmailHook([msg])
     result = _run(op2, hook2)
-    assert result == [_manifest_key(msg)]
+    assert result == [_manifest_uri(msg)]
     assert hook2.downloaded == []
 
 
@@ -353,7 +417,7 @@ def test_partial_batch_modify_retry_delivers_all_current_run():
     op2 = _make_op(store, mark_processed=True)
     hook2 = FakeGmailHook([msg1, msg2])
     result = _run(op2, hook2)
-    assert result == [_manifest_key(msg1), _manifest_key(msg2)]
+    assert result == [_manifest_uri(msg1), _manifest_uri(msg2)]
     assert hook2.downloaded == []  # both delivered from current-run manifests
 
 
@@ -371,7 +435,7 @@ def test_retry_without_labels_behaves_the_same():
     op2 = _make_op(store, mark_processed=False)
     hook2 = FakeGmailHook([msg])
     result = _run(op2, hook2)
-    assert result == [_manifest_key(msg)]
+    assert result == [_manifest_uri(msg)]
     assert hook2.downloaded == []
 
 
@@ -403,7 +467,7 @@ def test_existing_file_without_manifest_reruns_overwrites_no_crash():
 
     result = _run(op, hook)  # must overwrite + write manifest, not crash
 
-    assert result == [_manifest_key(msg)]
+    assert result == [_manifest_uri(msg)]
     assert store[_file_key(msg, "a.xlsx")] == b"bytes-of-a.xlsx"  # overwritten
     assert _manifest_key(msg) in store
 
@@ -453,7 +517,7 @@ def test_corrupt_manifest_overwrite_true_redownloads_no_manifest_error():
 
     result = _run(op, hook)  # overwrite → manifest not read → no ManifestError
 
-    assert result == [_manifest_key(msg)]
+    assert result == [_manifest_uri(msg)]
     assert hook.downloaded == [("msg1", "a.xlsx")]
     # the corrupt manifest was overwritten by a valid one
     assert Manifest.from_json(store[_manifest_key(msg)]).run_id == CURRENT_RUN

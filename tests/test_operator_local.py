@@ -167,6 +167,16 @@ def test_destination_path_is_absolute(tmp_path):
     assert dest.endswith(os.path.join("dt=2026-07-12", "msg1", "a.xlsx"))
 
 
+def test_xcom_path_equals_destination_path_absolute(tmp_path):
+    # Local inherits the base _xcom_path default (→ _destination_path), so XCom
+    # stays the absolute disk path — only S3 diverges to s3:// URIs (ADR-0007).
+    op = _make_op(tmp_path)
+    rel = "dt=2026-07-12/msg1/_manifest.json"
+    assert op._xcom_path(rel) == op._destination_path(rel)
+    assert os.path.isabs(op._xcom_path(rel))
+    assert not op._xcom_path(rel).startswith("s3://")
+
+
 def test_read_manifest_always_none(tmp_path):
     op = _make_op(tmp_path)
     assert op._read_manifest("dt=2026-07-12/msg1") is None

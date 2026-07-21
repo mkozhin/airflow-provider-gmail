@@ -47,7 +47,13 @@ from airflow_provider_gmail.dates import (
 from airflow_provider_gmail.hooks.gmail import GmailHook, resolve_label_name
 from airflow_provider_gmail.manifest import Decision, FileEntry, Manifest, decide
 from airflow_provider_gmail.utils.mime import Attachment, sanitize_filename
-from airflow_provider_gmail.utils.paths import MANIFEST_FILENAME, message_dir, s3_key
+from airflow_provider_gmail.utils.paths import (
+    MANIFEST_FILENAME,
+    message_dir,
+    s3_key,
+    s3_uri,
+    validate_prefix,
+)
 from airflow_provider_gmail.window import Window
 
 __all__ = [
@@ -210,12 +216,28 @@ class GmailAttachmentsBaseOperator(BaseOperator):
         raise NotImplementedError
 
     def _destination_path(self, rel_path: str) -> str:
-        """The canonical destination path of ``rel_path`` (for the manifest / XCom).
+        """The canonical destination path of ``rel_path`` (for the manifest).
 
+        Feeds the manifest's ``files[].path`` (and the S3 sensor's key parity).
         Abstract: S3 → the object key inside the bucket, local → the absolute
-        disk path.
+        disk path. **Not** what XCom carries — that goes through
+        :meth:`_xcom_path`, which diverges from this for S3 (ADR-0007).
         """
         raise NotImplementedError
+
+    def _xcom_path(self, rel_path: str) -> str:
+        """The path of ``rel_path`` as returned in XCom (a full, resolvable path).
+
+        The storage seam's fourth method (ADR-0006/ADR-0007): XCom carries a full
+        path a downstream consumer can address without knowing the bucket from a
+        side channel. The base default returns :meth:`_destination_path`, so the
+        local operator's XCom stays the absolute disk path; the S3 operator
+        overrides it to an ``s3://<bucket>/<key>`` URI. Kept separate from
+        :meth:`_destination_path` so the URI never leaks into the manifest's
+        ``files[].path`` (the layer-2 contract — ADR-0001), and without any
+        ``isinstance``/``hasattr`` branching in ``execute()`` (ADR-0006).
+        """
+        return self._destination_path(rel_path)
 
     def _read_manifest(self, rel_dir: str) -> Manifest | None:
         """Read the manifest under ``rel_dir``, or ``None`` when absent.
@@ -293,9 +315,10 @@ class GmailAttachmentsBaseOperator(BaseOperator):
         order *attachments → manifest → label*; the manifest is always written
         **last** so its presence proves the attachments landed.
 
-        Returns the canonical manifest paths of the messages processed **in this
-        run only** (XCom). Raises :class:`AirflowSkipException` when nothing was
-        delivered.
+        Returns the full manifest paths of the messages processed **in this run
+        only** (XCom) via :meth:`_xcom_path` — S3 ``s3://<bucket>/<key>`` URIs,
+        local absolute paths (ADR-0007). Raises :class:`AirflowSkipException`
+        when nothing was delivered.
         """
         run_id = context["run_id"]
         ref_day = context["data_interval_end"]
@@ -347,7 +370,11 @@ class GmailAttachmentsBaseOperator(BaseOperator):
             # sensor locates the same message via ``paths.manifest_key``, so operator
             # and sensor share one layout owner and can never disagree.
             rel_dir = message_dir("", dt.isoformat(), msg.message_id)
-            manifest_path = self._destination_path(f"{rel_dir}/{MANIFEST_FILENAME}")
+            # XCom carries the full manifest path via ``_xcom_path`` (S3 → URI,
+            # local → absolute path); the manifest's own ``files[].path`` keeps
+            # going through ``_destination_path`` (ADR-0007), so the two sources
+            # deliberately diverge for S3.
+            manifest_xcom_path = self._xcom_path(f"{rel_dir}/{MANIFEST_FILENAME}")
 
             # overwrite=True → do not read the manifest at all: a corrupt manifest
             # must not raise ManifestError during the forced re-download that
@@ -360,7 +387,7 @@ class GmailAttachmentsBaseOperator(BaseOperator):
             if decision is Decision.DELIVER_ONLY:
                 # Manifest of THIS run (a failed attempt): files are on storage
                 # but never reached downstream → deliver the path, do not download.
-                delivered.append(manifest_path)
+                delivered.append(manifest_xcom_path)
                 continue
             if decision is Decision.SKIP:
                 # Manifest of a PAST run: already went through layer 2 → drop.
@@ -395,7 +422,7 @@ class GmailAttachmentsBaseOperator(BaseOperator):
                 files,
                 run_id,
             )
-            delivered.append(manifest_path)
+            delivered.append(manifest_xcom_path)
 
         if self.mark_processed and to_label:
             self.hook.mark_processed(to_label, label_name)
@@ -410,8 +437,12 @@ class GmailAttachmentsToS3Operator(GmailAttachmentsBaseOperator):
 
     Concrete S3 implementation of the storage seam (ADR-0006). Attachments and
     the per-message ``_manifest.json`` are written under
-    ``<prefix>/dt=<dt>/<message_id>/`` inside ``bucket``; the manifest paths of
-    the messages processed **in this run** are returned in XCom (ADR-0001).
+    ``<prefix>/dt=<dt>/<message_id>/`` inside ``bucket``; the full
+    ``s3://<bucket>/<key>`` manifest URIs of the messages processed **in this
+    run** are returned in XCom (ADR-0001/ADR-0007). The URI carries **no**
+    endpoint — it addresses the object only paired with a consumer's
+    ``aws_conn_id`` (the endpoint lives in the Connection). The manifest's own
+    ``files[].path`` stays a bare object key (ADR-0007).
 
     Deduplication of delivery rests on the manifest + ``run_id`` alone: a message
     whose ``_manifest.json`` carries a **past** ``run_id`` is neither re-downloaded
@@ -458,6 +489,19 @@ class GmailAttachmentsToS3Operator(GmailAttachmentsBaseOperator):
         self.aws_conn_id = aws_conn_id
         self._cached_s3_hook = None
 
+    def execute(self, context: Any) -> list[str]:
+        """Validate the rendered ``prefix``, then run the base orchestration.
+
+        ``prefix`` is a template field, so it is validated here on its **rendered**
+        value (parity with ``date_from``/``date_to``, ADR-0004) — not in
+        ``__init__``, where a ``{{ ds }}`` template would trip the ``{``/``}``
+        check. A ``prefix`` with URL-hostile characters fails fast with a clear
+        :class:`ValueError` so produced object keys stay URL-safe by construction
+        (ADR-0007).
+        """
+        validate_prefix(self.prefix)
+        return super().execute(context)
+
     def _s3_hook(self):
         """The cached :class:`S3Hook`, importing the Amazon provider lazily.
 
@@ -498,6 +542,17 @@ class GmailAttachmentsToS3Operator(GmailAttachmentsBaseOperator):
         """
         return s3_key(self.prefix, rel_path)
 
+    def _xcom_path(self, rel_path: str) -> str:
+        """The ``s3://<bucket>/<key>`` URI of ``rel_path`` for XCom (ADR-0007).
+
+        Composes the *same* key as :meth:`_destination_path` (through the shared
+        :func:`s3_key`) and anchors it to :attr:`bucket` via :func:`s3_uri`, so
+        XCom's URI and the manifest's bare key never disagree on the object they
+        point at — they differ only by the ``s3://<bucket>/`` prefix. The URI
+        carries no endpoint; a consumer resolves it with its own ``aws_conn_id``.
+        """
+        return s3_uri(self.bucket, self.prefix, rel_path)
+
     def _read_manifest(self, rel_dir: str) -> Manifest | None:
         """Read + parse the manifest under ``rel_dir``, or ``None`` when absent.
 
@@ -525,7 +580,9 @@ class GmailAttachmentsToLocalOperator(GmailAttachmentsBaseOperator):
     Concrete local implementation of the storage seam (ADR-0006). Attachments and
     the per-message ``_manifest.json`` are written under
     ``<path>/dt=<dt>/<message_id>/``; the manifest's absolute paths of the messages
-    processed **in this run** are returned in XCom.
+    processed **in this run** are returned in XCom. Local inherits the base
+    :meth:`_xcom_path` default (``_destination_path``), so its XCom stays absolute
+    disk paths — only the S3 operator diverges to ``s3://`` URIs (ADR-0007).
 
     **This operator is deliberately outside the S3 retry-delivery contract**
     (ADR-0001). :meth:`_read_manifest` always returns ``None``, so :func:`decide`

@@ -274,6 +274,19 @@ def test_seam_methods_are_abstract_on_base():
         op._filter_processed_label()
 
 
+# -- _xcom_path default seam -------------------------------------------------
+
+
+def test_xcom_path_default_delegates_to_destination_path():
+    # The base default _xcom_path returns _destination_path unchanged, so a
+    # subclass that does not override it (like the local operator) keeps XCom and
+    # the manifest key identical (ADR-0007).
+    op = _make_operator()
+    assert op._xcom_path("dt=2026-07-12/msg1/_manifest.json") == op._destination_path(
+        "dt=2026-07-12/msg1/_manifest.json"
+    )
+
+
 # -- manifest assembly helper ------------------------------------------------
 
 
@@ -420,6 +433,12 @@ class _DictOperator(GmailAttachmentsBaseOperator):
         self.store[rel_path] = data
 
     def _destination_path(self, rel_path):
+        # A BARE key — feeds the manifest's files[].path and the storage writes.
+        return rel_path
+
+    def _xcom_path(self, rel_path):
+        # A full URI — what XCom carries; deliberately diverges from the manifest
+        # key so the _destination_path/_xcom_path split is actually exercised.
         return f"s3://bucket/{rel_path}"
 
     def _read_manifest(self, rel_dir):
@@ -473,7 +492,9 @@ def test_execute_attachment_named_manifest_not_overwritten_by_manifest():
     # Both keys exist and are distinct: the attachment survived.
     assert op.store[attachment_key] == b"bytes-of-_manifest.json"
     manifest = Manifest.from_json(op.store[manifest_key])
-    assert [f.path for f in manifest.files] == [f"s3://bucket/{attachment_key}"]
+    # files[].path is the BARE key (from _destination_path); XCom is the URI
+    # (from _xcom_path) — the two sources deliberately diverge (ADR-0007).
+    assert [f.path for f in manifest.files] == [attachment_key]
     assert [f.name for f in manifest.files] == [MANIFEST_FILENAME]
     assert result == [f"s3://bucket/{manifest_key}"]
 
