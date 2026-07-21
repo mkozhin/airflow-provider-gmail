@@ -165,30 +165,21 @@ def test_non_str_input_raises_valueerror(value):
 # -- internal errors are not masked as ValueError ----------------------------
 
 
-def test_internal_attributeerror_propagates(monkeypatch):
+@pytest.mark.parametrize("exc", [AttributeError, TypeError])
+def test_internal_error_propagates_not_masked(monkeypatch, exc):
     # After narrowing the parse ``except`` to ``ValueError`` only, an unexpected
-    # AttributeError from inside the try (e.g. a future typo like
-    # ``datetime.fromisoformatt``) must PROPAGATE, not be masked as a ValueError
-    # "bad input". Rebind the module-level ``datetime`` name (its stdlib class is
-    # an immutable C type, so ``setattr`` on ``dates.datetime`` would fail).
+    # error from inside the try (e.g. a future typo like
+    # ``datetime.fromisoformatt`` raising AttributeError, or a TypeError) must
+    # PROPAGATE, not be masked as a ValueError "bad input". Rebind the
+    # module-level ``datetime`` name (its stdlib class is an immutable C type, so
+    # ``setattr`` on ``dates.datetime`` would fail). The value is a VALID aware
+    # string so the isinstance guard and ``.endswith("Z")`` do not short-circuit
+    # and execution reaches the faked ``datetime.fromisoformat``.
     class Fake:
         @staticmethod
         def fromisoformat(value):
-            raise AttributeError("boom")
+            raise exc("boom")
 
     monkeypatch.setattr(dates, "datetime", Fake)
-    with pytest.raises(AttributeError):
-        from_local_iso("2026-07-10T09:14:22+00:00")
-
-
-def test_internal_typeerror_propagates(monkeypatch):
-    # Likewise a TypeError from inside the try must propagate rather than be
-    # converted into a ValueError.
-    class Fake:
-        @staticmethod
-        def fromisoformat(value):
-            raise TypeError("boom")
-
-    monkeypatch.setattr(dates, "datetime", Fake)
-    with pytest.raises(TypeError):
+    with pytest.raises(exc):
         from_local_iso("2026-07-10T09:14:22+00:00")
