@@ -177,9 +177,12 @@ def test_latest_duplicate_returns_winner_once():
 
 @pytest.mark.parametrize("pairs", [[], None])
 def test_unknown_pick_raises(pairs):
-    # Unknown pick is rejected regardless of the (even empty/None) pairs.
+    # Unknown pick is rejected regardless of the pairs — including ``None``,
+    # which is passed through unchanged so the case genuinely asserts that pick
+    # validation precedes any iteration of the pairs (None would raise TypeError
+    # if iterated first).
     with pytest.raises(ValueError, match="pick must be one of"):
-        _resolve(pairs if pairs is not None else [], "invalid")
+        _resolve(pairs, "invalid")
 
 
 # -- URI assembly for spaces / Unicode / defense-in-depth ---------------------
@@ -195,12 +198,26 @@ def test_uri_assembly_preserves_spaces_and_unicode():
 
 def test_uri_assembly_preserves_old_special_chars_defense_in_depth():
     # Defense in depth: new keys are sanitized (Task 1a), but a foreign/old key
-    # carrying ? # % must pass through untouched. Built MANUALLY (raw key), NOT
-    # via sanitize_filename — otherwise the test would assert on nothing.
+    # carrying ? # % is preserved verbatim when re-anchored — those characters
+    # survive s3_key/join_key normalization untouched. Built MANUALLY (raw key),
+    # NOT via sanitize_filename — otherwise the test would assert on nothing.
     raw_key = "gmail/avito/dt=2026-07-10/MSG/report?v=1#frag%20.xlsx"
     manifest = _mk("MSG", "2026-07-10T09:00:00+03:00", [raw_key])
     assert _resolve([(_s3_manifest_path("MSG"), manifest)], "all") == [
         f"s3://{BUCKET}/{raw_key}"
+    ]
+
+
+def test_s3_reanchor_collapses_double_slash_in_key():
+    # The "preserved verbatim" guarantee holds only for NORMALIZED keys: re-anchoring
+    # an S3 key routes through s3_uri -> s3_key -> join_key, which collapses a doubled
+    # slash and strips edge slashes. A foreign files[].path of "a//b" is therefore
+    # rewritten to the normalized "a/b" (a DIFFERENT object) — behavior pinned here
+    # so the divergence is documented, not silently assumed away.
+    raw_key = "gmail/avito/dt=2026-07-10/MSG//report.xlsx"
+    manifest = _mk("MSG", "2026-07-10T09:00:00+03:00", [raw_key])
+    assert _resolve([(_s3_manifest_path("MSG"), manifest)], "all") == [
+        f"s3://{BUCKET}/gmail/avito/dt=2026-07-10/MSG/report.xlsx"
     ]
 
 
@@ -380,3 +397,51 @@ def test_special_char_key_round_trip_through_s3_read(fake_s3):
     manifest = _mk("MSG", "2026-07-10T09:00:00+03:00", [raw_key])
     uri = _put(fake_s3, "MSG", manifest)
     assert resolve_attachments([uri], "all") == [f"s3://{BUCKET}/{raw_key}"]
+
+
+# -- mixed S3 + local manifests in one call -----------------------------------
+
+
+def test_mixed_s3_and_local_manifests_resolve_in_one_call(fake_s3, tmp_path):
+    # An interleaved list (S3 URI, local path, S3 URI): S3 entries read through a
+    # single lazily-created hook, local entries read straight off disk.
+    m_s3a = _mk("A", "2026-07-10T09:00:00+03:00", [_s3_key("A", "a.xlsx")])
+    m_s3b = _mk("B", "2026-07-10T10:00:00+03:00", [_s3_key("B", "b.xlsx")])
+    u_a = _put(fake_s3, "A", m_s3a)
+    u_b = _put(fake_s3, "B", m_s3b)
+
+    local_key = "/data/gmail/avito/dt=2026-07-10/LOC/local.xlsx"
+    m_local = _mk("LOC", "2026-07-10T09:30:00+03:00", [local_key])
+    local_path = tmp_path / "_manifest.json"
+    local_path.write_bytes(m_local.to_json())
+
+    result = resolve_attachments([u_a, str(local_path), u_b], "all")
+
+    assert result == [
+        f"s3://{BUCKET}/{_s3_key('A', 'a.xlsx')}",
+        local_key,
+        f"s3://{BUCKET}/{_s3_key('B', 'b.xlsx')}",
+    ]
+    # Exactly one S3Hook for the whole call — created for the S3 entries, and it
+    # served both S3 reads (the local entry never touched it).
+    assert len(fake_s3.instances) == 1
+    assert len(fake_s3.instances[0].read_calls) == 2
+
+
+# -- public edge: pick="latest" winner after real reads -----------------------
+
+
+def test_latest_selects_winner_through_public_read_edge(fake_s3):
+    # End-to-end: multiple S3 manifests read via the mocked hook, then pick="latest"
+    # selects the winner by internal_date. The early manifest's ISO text sorts AFTER
+    # the late one lexicographically, so this also pins chronological-not-lexicographic
+    # ordering driven through from_local_iso at the I/O edge.
+    m_early = _mk("EARLY", "2026-07-10T09:00:00+03:00", [_s3_key("EARLY", "e.xlsx")])
+    m_late = _mk("LATE", "2026-07-10T07:00:00+00:00", [_s3_key("LATE", "l.xlsx")])
+    assert "2026-07-10T09:00:00+03:00" > "2026-07-10T07:00:00+00:00"  # lexicographic
+    u_early = _put(fake_s3, "EARLY", m_early)
+    u_late = _put(fake_s3, "LATE", m_late)
+
+    result = resolve_attachments([u_early, u_late], "latest")
+
+    assert result == [f"s3://{BUCKET}/{_s3_key('LATE', 'l.xlsx')}"]

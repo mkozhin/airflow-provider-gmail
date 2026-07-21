@@ -19,7 +19,7 @@
   a bare key.
 - **BREAKING: attachment filenames and prefixes are hardened for URL-safe keys.**
   `sanitize_filename` now replaces every character from S3's "characters to
-  avoid" set plus `?` and the quotes (`? # % { } ^ [ ] < > ~ | " ` + backtick)
+  avoid" set plus `?` and the double quote (`? # % { } ^ [ ] < > ~ | " ` + backtick)
   with `_`, so produced object keys are URL-safe by construction and a
   third-party `s3://` URL parser works on them. `\` and `/` are unaffected (the
   basename step already strips them, so `a\b\c.xlsx → c.xlsx` is preserved).
