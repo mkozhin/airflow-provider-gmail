@@ -10,6 +10,9 @@ coupling that would otherwise exist purely to share two pure functions.
 - :func:`to_local_date` / :func:`to_local_iso` — the ``dt=`` partition date and
   the manifest ``internal_date``, both over one epoch→aware-datetime conversion
   so path and manifest can never disagree.
+- :func:`from_local_iso` — the inverse of :func:`to_local_iso`: parse a manifest
+  ``internal_date`` string back into an aware :class:`datetime` for chronological
+  comparison. Owned here because this module owns the ``internal_date`` format.
 """
 
 from __future__ import annotations
@@ -99,3 +102,37 @@ def to_local_date(internal_date: int, timezone: str) -> date:
 def to_local_iso(internal_date: int, timezone: str) -> str:
     """ISO 8601 string of ``internal_date`` in ``timezone`` (manifest ``internal_date``)."""
     return _to_aware_datetime(internal_date, timezone).isoformat()
+
+
+def from_local_iso(value: str) -> datetime:
+    """Parse a manifest ``internal_date`` string into an aware :class:`datetime`.
+
+    The inverse of :func:`to_local_iso`: this module owns the ``internal_date``
+    format, so it also owns parsing it back. The resolver compares manifests by
+    *moment in time* (``pick="latest"``) and must never compare the ISO strings
+    lexicographically — two equal instants written with different UTC offsets sort
+    wrongly as text.
+
+    A string **without** a UTC offset (a *naive* timestamp) raises
+    :class:`ValueError` right here, at the parse point, rather than slipping
+    through :meth:`datetime.fromisoformat` and blowing up much later with an
+    opaque ``TypeError`` when an aware and a naive datetime are compared. A
+    malformed string likewise raises :class:`ValueError`.
+
+    This is deliberately *not* wrapped in ``ManifestError`` — that exception is
+    strictly about the manifest *schema* (:meth:`Manifest.from_json`), whereas a
+    missing offset is a value problem surfaced only by ``pick="latest"``.
+    """
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(
+            f"internal_date must be an ISO 8601 timestamp with a UTC offset, "
+            f"got {value!r}"
+        ) from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(
+            f"internal_date must be timezone-aware (carry a UTC offset), got "
+            f"naive {value!r}"
+        )
+    return parsed

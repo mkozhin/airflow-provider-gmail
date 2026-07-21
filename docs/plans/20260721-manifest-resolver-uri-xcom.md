@@ -270,7 +270,7 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
 - Create: `tests/test_dates.py`
 - Update: `src/airflow_provider_gmail/dates.py`
 
-- [ ] `dates.py`: `from_local_iso(value: str) -> datetime` (aware) рядом с
+- [x] `dates.py`: `from_local_iso(value: str) -> datetime` (aware) рядом с
   `to_local_iso` — владелец формата `internal_date` парсит его сам, резолвер
   формата не знает (арх. грилинг 2026-07-21, кандидат 3); строка БЕЗ offset
   (naive) → `ValueError` с внятным сообщением прямо в точке парсинга
@@ -278,11 +278,11 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
   на сравнении); в `ManifestError` НЕ оборачивать (он строго про схему
   `from_json`); вызываться будет ТОЛЬКО из `pick="latest"` — режим `all`
   дату не читает и не валидирует (YAGNI + GIGO, codex-ревью 2026-07-21)
-- [ ] write tests (НОВЫЙ чистый `tests/test_dates.py`): round-trip
+- [x] write tests (НОВЫЙ чистый `tests/test_dates.py`): round-trip
   `from_local_iso(to_local_iso(ms, tz))` == момент `ms` (несколько зон);
   naive-строка → `ValueError`; malformed-строка → `ValueError`;
   существующие date-тесты из `test_operator_base.py` НЕ мигрируем
-- [ ] run tests - must pass before next task
+- [x] run tests - must pass before next task
 
 ### Task 2b: Чистое ядро _resolve
 
