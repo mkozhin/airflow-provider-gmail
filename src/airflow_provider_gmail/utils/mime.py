@@ -18,6 +18,8 @@ import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 
+from airflow_provider_gmail.utils.paths import FORBIDDEN_KEY_CHARS
+
 _ENCODED_WORD = re.compile(r"=\?[^?]+\?[BbQq]\?[^?]*\?=")
 _CONTROL_CHARS = {chr(c) for c in range(0, 32)} | {chr(127)}
 
@@ -93,8 +95,16 @@ def sanitize_filename(name: str, fallback: str) -> str:
     """Turn an attacker-controlled attachment name into a safe path segment.
 
     Takes the basename only, drops ``/``, ``\\``, ``..``, null bytes and control
-    characters, then caps the result at a filesystem/S3-safe byte length. If
+    characters, replaces URL-hostile characters (:data:`FORBIDDEN_KEY_CHARS`)
+    with ``_``, then caps the result at a filesystem/S3-safe byte length. If
     nothing usable is left, returns ``fallback``.
+
+    The special-character replacement runs *after* the basename step (``/`` and
+    ``\\`` are already gone, so they are absent from the forbidden set — the
+    ``a\\b\\c.xlsx → c.xlsx`` contract holds) and *after* the empty/dots-only
+    fallback check, so a name made entirely of forbidden characters becomes
+    ``_``\\ s (``??? → ___``) rather than falling back. Spaces and Unicode are
+    left untouched — they are safe for both ``urlsplit`` and the aws CLI.
 
     A defensive RFC 2047 fallback runs first: Gmail normally gives the filename
     already decoded, but if a fixture ever shows an encoded word we still decode
@@ -114,6 +124,13 @@ def sanitize_filename(name: str, fallback: str) -> str:
     # Empty, or nothing but dots ("." / "..." after the strip) — not a real name.
     if not candidate or set(candidate) <= {"."}:
         return fallback
+
+    # Replace URL-hostile characters so produced keys are safe for third-party
+    # s3:// URL parsers. Runs after the fallback check so an all-special name
+    # becomes "___", not the fallback.
+    candidate = "".join(
+        "_" if ch in FORBIDDEN_KEY_CHARS else ch for ch in candidate
+    )
     return _cap_filename_length(candidate)
 
 

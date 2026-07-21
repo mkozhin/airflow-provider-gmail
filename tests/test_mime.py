@@ -16,6 +16,7 @@ from airflow_provider_gmail.utils.mime import (
     iter_attachments,
     sanitize_filename,
 )
+from airflow_provider_gmail.utils.paths import FORBIDDEN_KEY_CHARS
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures" / "gmail"
 
@@ -168,6 +169,61 @@ def test_sanitize_dotfile_passes_through_undistorted():
     # A short dotfile (leading dot, no extension) is under the cap and is not
     # split into a bare extension — it passes through unchanged.
     assert sanitize_filename(".bashrc", "attachment_0") == ".bashrc"
+
+
+# -- special-character replacement (URL-hostile chars -> "_") -----------------
+
+
+@pytest.mark.parametrize("char", list(FORBIDDEN_KEY_CHARS))
+def test_sanitize_replaces_each_forbidden_char(char):
+    # Each character in the forbidden set is replaced with "_" so produced keys
+    # are safe for third-party s3:// URL parsers.
+    result = sanitize_filename(f"re{char}port.xlsx", "attachment_0")
+    assert result == "re_port.xlsx"
+
+
+def test_sanitize_replaces_multiple_forbidden_chars():
+    result = sanitize_filename("a?b#c%d.xlsx", "attachment_0")
+    assert result == "a_b_c_d.xlsx"
+
+
+def test_sanitize_keeps_spaces_and_cyrillic():
+    # Spaces and Unicode are safe and must NOT be replaced.
+    assert (
+        sanitize_filename("Отчёт за июль.xlsx", "attachment_0")
+        == "Отчёт за июль.xlsx"
+    )
+
+
+def test_sanitize_backslash_basename_not_broken_by_replacement():
+    # The special-char replacement runs AFTER the basename step, so `\` and `/`
+    # are not in the forbidden set and the a\b\c.xlsx -> c.xlsx contract holds.
+    assert sanitize_filename("a\\b\\c.xlsx", "attachment_0") == "c.xlsx"
+
+
+def test_sanitize_all_special_becomes_underscores_not_fallback():
+    # A name made entirely of forbidden characters is replaced (??? -> ___),
+    # NOT dropped to the fallback — the empty/dots-only check runs before the
+    # replacement step.
+    assert sanitize_filename("???", "attachment_5") == "___"
+
+
+def test_sanitize_special_chars_then_collision_resolution():
+    # After replacement two distinct names can collide (a?.xlsx and a#.xlsx both
+    # become a_.xlsx); resolve_collisions disambiguates them with an _N suffix.
+    from airflow_provider_gmail.operators.gmail import resolve_collisions
+
+    # Sanity: both raw names sanitize to the same key-safe name.
+    assert sanitize_filename("a?.xlsx", "attachment_0") == "a_.xlsx"
+    assert sanitize_filename("a#.xlsx", "attachment_0") == "a_.xlsx"
+
+    attachments = [
+        Attachment("a?.xlsx", "application/octet-stream", "id-0", None),
+        Attachment("a#.xlsx", "application/octet-stream", "id-1", None),
+    ]
+    resolved_names = [safe for _, safe in resolve_collisions(attachments)]
+    assert len(set(resolved_names)) == 2
+    assert resolved_names[0] == "a_.xlsx"
 
 
 # --------------------------------------------------------------------------

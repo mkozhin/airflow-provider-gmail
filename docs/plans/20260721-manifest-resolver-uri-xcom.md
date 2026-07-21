@@ -185,24 +185,24 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
 - Update: `src/airflow_provider_gmail/utils/paths.py`, `tests/test_paths.py`,
   `src/airflow_provider_gmail/utils/mime.py`, `tests/test_mime.py`
 
-- [ ] спецсимволы у источника (см. Solution Overview): константа
+- [x] спецсимволы у источника (см. Solution Overview): константа
   запрещённого в ключах набора — в `paths.py` (БЕЗ `\` и `/` — их режет
   basename-логика до шага замены); `sanitize_filename` (`mime.py`)
   заменяет символы набора на `_` после basename-шага (пробелы/Unicode
   не трогает)
-- [ ] `paths.py`: `s3_uri` / `split_s3_uri` / `is_s3_uri` (см. Solution
+- [x] `paths.py`: `s3_uri` / `split_s3_uri` / `is_s3_uri` (см. Solution
   Overview); контракт СИММЕТРИЧЕН (codex-ревью №2): `s3_uri` с пустым
   `bucket` или пустым итоговым ключом → `ValueError` (builder не может
   породить URI, который парный `split_s3_uri` не примет — round-trip
   без дыр); обе стороны пары пишутся в одной задаче
-- [ ] write tests `test_mime.py`: замена каждого символа набора; пробелы
+- [x] write tests `test_mime.py`: замена каждого символа набора; пробелы
   и кириллица сохраняются; существующий контракт
   `a\b\c.xlsx → c.xlsx` НЕ ломается (basename до замены); имя ЦЕЛИКОМ из
   спецсимволов: `???` → `___` (замена, НЕ fallback — проверка
   «пусто/только точки» остаётся до шага замены; финальное ревью
   2026-07-21); коллизии после замены идут через `resolve_collisions`
   (тест — рядом с существующими тестами `resolve_collisions`)
-- [ ] write tests `test_paths.py`: round-trip
+- [x] write tests `test_paths.py`: round-trip
   `split_s3_uri(s3_uri(b, k)) == (b, k)` на ключах с `? # %`, пробелами,
   Unicode; error-кейсы СИММЕТРИЧНО для builder и splitter: не-S3 вход,
   `s3:///key` (пустой бакет), `s3://bucket` и `s3://bucket/` (пустой
@@ -211,7 +211,7 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
   нормализованная форма (`a/b`, `a`) — поведение зафиксировано явно
   (финальное ревью 2026-07-21); `is_s3_uri`: `s3://…` → True, локальный
   путь / `http://…` → False
-- [ ] run tests - must pass before next task
+- [x] run tests - must pass before next task
 
 ### Task 1b: Шов _xcom_path и валидация prefix
 

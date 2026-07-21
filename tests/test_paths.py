@@ -14,10 +14,13 @@ import pytest
 
 from airflow_provider_gmail.utils.paths import (
     S3_MAX_KEY_BYTES,
+    is_s3_uri,
     join_key,
     manifest_key,
     message_dir,
     s3_key,
+    s3_uri,
+    split_s3_uri,
 )
 
 DT = "2026-07-12"
@@ -134,3 +137,82 @@ def test_s3_key_collision_suffix_tips_over_limit():
     assert len(ok_key.encode("utf-8")) <= S3_MAX_KEY_BYTES
     with pytest.raises(ValueError):
         s3_key(prefix, f"{stem}_1.xlsx")
+
+
+# -- s3_uri / split_s3_uri round-trip ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    "bucket,key",
+    [
+        ("bucket", "gmail/avito/dt=2026-07-12/abc/report.xlsx"),
+        ("my-bucket", "prefix/file with spaces.xlsx"),
+        ("bucket", "prefix/Отчёт за июль.xlsx"),
+        # Defense-in-depth: old/foreign keys may carry ? # % — the round-trip
+        # must preserve them verbatim (direct split, no urlsplit).
+        ("bucket", "prefix/weird?name#1%20.xlsx"),
+    ],
+)
+def test_s3_uri_split_round_trip(bucket, key):
+    uri = s3_uri(bucket, key)
+    assert uri.startswith("s3://")
+    assert split_s3_uri(uri) == (bucket, key)
+
+
+def test_s3_uri_composes_multiple_segments():
+    uri = s3_uri("bucket", "gmail/avito", f"dt={DT}/{MSG}", "report.xlsx")
+    assert uri == f"s3://bucket/gmail/avito/dt={DT}/{MSG}/report.xlsx"
+
+
+def test_s3_uri_normalizes_unnormalized_key():
+    # A key with a doubled slash / leading slash goes into the URI in its
+    # normalized form (a//b -> a/b, /a -> a) — behavior pinned explicitly.
+    assert s3_uri("bucket", "a//b") == "s3://bucket/a/b"
+    assert s3_uri("bucket", "/a") == "s3://bucket/a"
+    # And it still round-trips to the *normalized* key.
+    assert split_s3_uri(s3_uri("bucket", "a//b")) == ("bucket", "a/b")
+
+
+# -- s3_uri / split_s3_uri error cases (symmetric) ---------------------------
+
+
+def test_s3_uri_empty_bucket_raises():
+    with pytest.raises(ValueError):
+        s3_uri("", "key")
+
+
+def test_s3_uri_empty_key_raises():
+    with pytest.raises(ValueError):
+        s3_uri("bucket", "")
+    # A key of nothing but slashes normalizes to empty -> also rejected.
+    with pytest.raises(ValueError):
+        s3_uri("bucket", "///")
+
+
+def test_split_s3_uri_not_s3_raises():
+    for bad in ("/absolute/local/path", "http://example.com/x", "report.xlsx"):
+        with pytest.raises(ValueError):
+            split_s3_uri(bad)
+
+
+def test_split_s3_uri_empty_bucket_raises():
+    with pytest.raises(ValueError):
+        split_s3_uri("s3:///key")
+
+
+def test_split_s3_uri_empty_key_raises():
+    with pytest.raises(ValueError):
+        split_s3_uri("s3://bucket")
+    with pytest.raises(ValueError):
+        split_s3_uri("s3://bucket/")
+
+
+# -- is_s3_uri ---------------------------------------------------------------
+
+
+def test_is_s3_uri_predicate():
+    assert is_s3_uri("s3://bucket/key")
+    assert is_s3_uri("s3://bucket/dt=2026/abc/report.xlsx")
+    assert not is_s3_uri("/absolute/local/path/report.xlsx")
+    assert not is_s3_uri("http://example.com/report.xlsx")
+    assert not is_s3_uri("report.xlsx")

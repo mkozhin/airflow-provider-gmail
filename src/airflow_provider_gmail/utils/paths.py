@@ -31,6 +31,19 @@ MANIFEST_FILENAME = "_manifest.json"
 #: S3 caps a *whole* object key at 1024 UTF-8 bytes (not per component).
 S3_MAX_KEY_BYTES = 1024
 
+#: The ``s3://`` URI scheme — the **only** place this literal lives in ``src``.
+S3_URI_SCHEME = "s3://"
+
+#: Characters that make an S3 key hostile to third-party ``s3://`` URL parsers:
+#: S3's own "characters to avoid" (``{ } ^ [ ] < > ~ | # %`` and the backtick)
+#: plus ``?`` and the double quote. Killed at the source
+#: (:func:`airflow_provider_gmail.utils.mime.sanitize_filename` replaces each
+#: with ``_``) and rejected in a rendered ``prefix`` — so produced keys are
+#: URL-safe by construction. ``\`` and ``/`` are deliberately **absent**: the
+#: basename step of ``sanitize_filename`` strips them *before* the replacement
+#: runs, preserving the ``a\b\c.xlsx → c.xlsx`` contract.
+FORBIDDEN_KEY_CHARS = frozenset('?#%{}^[]<>~|"`')
+
 
 def join_key(*segments: str) -> str:
     """Join path segments into an S3 key, dropping empties and stray slashes.
@@ -93,3 +106,53 @@ def manifest_key(prefix: str, dt: str, message_id: str) -> str:
     produced key is unchanged for normal prefixes.
     """
     return s3_key(message_dir(prefix, dt, message_id), MANIFEST_FILENAME)
+
+
+def is_s3_uri(uri: str) -> bool:
+    """Return ``True`` iff ``uri`` starts with the ``s3://`` scheme.
+
+    The predicate the resolver branches on: an ``s3://…`` path is read via
+    ``S3Hook`` and its attachment keys are re-anchored to the manifest's bucket;
+    anything else (an absolute local path, ``http://…``) is read from the local
+    filesystem. This is the **only** place, together with :func:`s3_uri` /
+    :func:`split_s3_uri`, that knows the ``s3://`` literal.
+    """
+    return uri.startswith(S3_URI_SCHEME)
+
+
+def s3_uri(bucket: str, *segments: str) -> str:
+    """Build a full ``s3://<bucket>/<key>`` URI from a bucket and key segments.
+
+    The key is composed through :func:`s3_key`, so the same normalization
+    (collapsed empty segments and stray slashes) and the same 1024-byte guard
+    apply as for every other key in the layout. The builder is the symmetric
+    partner of :func:`split_s3_uri`: an empty ``bucket`` or an empty composed
+    key raises :class:`ValueError` rather than emitting an ``s3://`` URI that
+    :func:`split_s3_uri` would then refuse — so the round-trip has no holes.
+    """
+    if not bucket:
+        raise ValueError("s3_uri requires a non-empty bucket")
+    key = s3_key(*segments)
+    if not key:
+        raise ValueError("s3_uri requires a non-empty key")
+    return f"{S3_URI_SCHEME}{bucket}/{key}"
+
+
+def split_s3_uri(uri: str) -> tuple[str, str]:
+    """Split an ``s3://<bucket>/<key>`` URI into ``(bucket, key)`` by raw string.
+
+    Deliberately a **direct** split — the scheme is stripped, the bucket is the
+    text up to the first ``/``, and the key is *everything* after it, verbatim
+    (no ``urlsplit``, no ``parse_s3_url``): defense in depth for old or foreign
+    keys that may carry ``? # %``. A non-``s3://`` input, an empty bucket
+    (``s3:///key``) or an empty key (``s3://bucket``, ``s3://bucket/``) raises
+    :class:`ValueError` — the symmetric partner of :func:`s3_uri`.
+    """
+    if not is_s3_uri(uri):
+        raise ValueError(f"not an s3:// URI: {uri!r}")
+    bucket, sep, key = uri[len(S3_URI_SCHEME) :].partition("/")
+    if not bucket:
+        raise ValueError(f"s3:// URI has an empty bucket: {uri!r}")
+    if not sep or not key:
+        raise ValueError(f"s3:// URI has an empty key: {uri!r}")
+    return bucket, key
