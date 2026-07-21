@@ -139,11 +139,11 @@ def from_local_iso(value: str) -> datetime:
     normalized form.
     """
     original = value
-    if value.endswith("Z"):
-        value = f"{value[:-1]}+00:00"
     try:
+        if value.endswith("Z"):
+            value = f"{value[:-1]}+00:00"
         parsed = datetime.fromisoformat(value)
-    except (ValueError, TypeError) as exc:
+    except (ValueError, TypeError, AttributeError) as exc:
         raise ValueError(
             f"internal_date must be an ISO 8601 timestamp with a UTC offset, "
             f"got {original!r}"

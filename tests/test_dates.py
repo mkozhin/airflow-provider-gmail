@@ -139,3 +139,22 @@ def test_naive_string_raises_valueerror(value):
 def test_malformed_string_raises_valueerror(value):
     with pytest.raises(ValueError, match="ISO 8601"):
         from_local_iso(value)
+
+
+# -- non-str input -----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        123,
+        b"2026-07-10T09:14:22Z",
+    ],
+)
+def test_non_str_input_raises_valueerror(value):
+    # A non-str input must surface as the normalized ValueError, not leak the
+    # raw AttributeError/TypeError from ``.endswith``/``fromisoformat``. The Z
+    # normalization must not run outside the try/except and regress this.
+    with pytest.raises(ValueError, match="ISO 8601"):
+        from_local_iso(value)
