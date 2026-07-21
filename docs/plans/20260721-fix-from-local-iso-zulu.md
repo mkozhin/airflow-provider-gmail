@@ -151,16 +151,16 @@ timezone-aware … naive», хотя вход НЕ naive.
 
 ### Task 2: Verify acceptance criteria
 
-- [ ] проверить, что все требования Overview выполнены: `Z` читается, ложное
+- [x] проверить, что все требования Overview выполнены: `Z` читается, ложное
   «naive» ушло, offset-форма и round-trip не изменились, `ManifestError` не
   затронут
-- [ ] проверить edge-кейсы из Technical Details (микросекунды+Z, момент через
+- [x] проверить edge-кейсы из Technical Details (микросекунды+Z, момент через
   разные offset'ы, naive/malformed по-прежнему падают)
-- [ ] сверить CHANGELOG: подтвердить, что отдельная запись не нужна
+- [x] сверить CHANGELOG: подтвердить, что отдельная запись не нужна
   (`from_local_iso` новый в невыпущенной 0.3.0) — если решено иначе, добавить
   строку в существующую секцию `## [0.3.0]` и отметить это здесь
-- [ ] прогнать полный набор: `pytest`
-- [ ] проверить покрытие: `pytest --cov=airflow_provider_gmail
+- [x] прогнать полный набор: `pytest`
+- [x] проверить покрытие: `pytest --cov=airflow_provider_gmail
   --cov-report=term-missing` (держим ~99%, `dates.py` — 100%)
 
 ### Task 3: [Final] Update documentation
