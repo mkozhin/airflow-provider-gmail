@@ -129,10 +129,16 @@ def from_local_iso(value: str) -> datetime:
     :func:`to_local_iso` always writes a numeric offset (never ``Z``), yet a
     foreign or hand-written manifest may carry ``Z`` — normalizing it lets the
     resolver read both spellings of UTC on every supported Python and removes the
-    misleading "naive" error for what is in fact a fully aware UTC moment. Only
-    uppercase ``Z`` is normalized; a lowercase ``z`` is not valid ISO 8601 and is
-    left to raise :class:`ValueError`.
+    misleading "not a valid ISO 8601 timestamp" rejection that Python 3.10 raises
+    for what is in fact a fully aware UTC moment (3.10's
+    :meth:`datetime.fromisoformat` cannot parse ``Z`` at all). Only uppercase
+    ``Z`` is normalized; a lowercase ``z`` is not valid ISO 8601 and is left to
+    raise :class:`ValueError`.
+
+    Error messages report the caller's original input, not the ``Z``→``+00:00``
+    normalized form.
     """
+    original = value
     if value.endswith("Z"):
         value = f"{value[:-1]}+00:00"
     try:
@@ -140,11 +146,11 @@ def from_local_iso(value: str) -> datetime:
     except (ValueError, TypeError) as exc:
         raise ValueError(
             f"internal_date must be an ISO 8601 timestamp with a UTC offset, "
-            f"got {value!r}"
+            f"got {original!r}"
         ) from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError(
             f"internal_date must be timezone-aware (carry a UTC offset), got "
-            f"naive {value!r}"
+            f"naive {original!r}"
         )
     return parsed

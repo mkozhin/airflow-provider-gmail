@@ -82,11 +82,23 @@ def test_zulu_suffix_with_microseconds_parses():
     [
         "not-a-dateZ",  # malformed with a trailing Z is not masked
         "Z",  # bare Z
+        # A real offset PLUS a trailing Z is garbage: strip-one-Z + append
+        # "+00:00" yields a double offset that must not be masked into a wrong
+        # aware datetime (guards against a future rstrip("Z")/replace refactor).
+        "2026-07-10T09:14:22+03:00Z",
+        "2026-07-10T09:14:22+00:00Z",
     ],
 )
 def test_malformed_zulu_string_raises_valueerror(value):
     with pytest.raises(ValueError, match="ISO 8601"):
         from_local_iso(value)
+
+
+def test_bare_zulu_error_reports_original_input():
+    # The message must quote what the caller passed ("Z"), not the internal
+    # Z->+00:00 normalized form.
+    with pytest.raises(ValueError, match=r"got 'Z'"):
+        from_local_iso("Z")
 
 
 def test_lowercase_z_raises_valueerror():
