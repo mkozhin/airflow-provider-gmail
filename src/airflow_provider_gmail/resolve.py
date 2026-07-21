@@ -84,3 +84,67 @@ def _resolve(pairs: list[tuple[str, Manifest]], pick: str) -> list[str]:
         key=lambda pair: (from_local_iso(pair[1].internal_date), pair[1].message_id),
     )
     return _attachment_paths(winner_path, winner)
+
+
+def resolve_attachments(
+    manifests: list[str],
+    pick: str = "all",
+    aws_conn_id: str = "aws_default",
+) -> list[str]:
+    """Read manifest paths and expand them to a flat list of full attachment paths.
+
+    The public I/O edge over the pure :func:`_resolve` core: each entry of
+    ``manifests`` is a full manifest path (an ``s3://<bucket>/<key>`` URI or an
+    absolute local path, e.g. a Gmail download operator's XCom), read into a
+    :class:`Manifest` and handed as a ``(path, Manifest)`` pair to :func:`_resolve`.
+
+    ``pick`` is validated **first, before any I/O** — an unknown ``pick`` raises
+    :class:`ValueError` rather than letting a storage error surface first, so
+    ``resolve_attachments([], pick="invalid")`` raises rather than returning ``[]``.
+    :func:`_resolve` re-validates it (an internal-seam guard).
+
+    Reading:
+
+    - **S3 URI** (:func:`is_s3_uri` true): the ``(bucket, key)`` is parsed with
+      :func:`split_s3_uri` (**not** ``parse_s3_url``) and read via
+      ``S3Hook.read_key``. The Amazon provider is imported **lazily** and exactly
+      **one** ``S3Hook`` is created per call — on the first S3 URI — and reused for
+      the rest, with ``aws_conn_id`` passed to its constructor. A purely-local
+      input never touches the Amazon provider (the extra ``s3`` is not required).
+    - **local path**: read straight off disk as bytes.
+
+    Both feed :meth:`Manifest.from_json`, so a broken manifest raises
+    :class:`~airflow_provider_gmail.manifest.ManifestError` up to the caller (never
+    swallowed). A **missing** manifest (the URI/path is well-formed but the object
+    is gone — deleted, retention, or ``aws_conn_id`` points at the wrong store)
+    surfaces as its natural error with no wrapping and no ``check_for_key``
+    pre-check: S3 raises a ``ClientError`` (NoSuchKey / NoSuchBucket / AccessDenied),
+    local raises ``FileNotFoundError``. ``ManifestError`` stays strictly about
+    manifest *content*.
+
+    An empty ``manifests`` list yields ``[]``. ``None`` is **not** masked — there
+    is deliberately no ``if not manifests`` short-circuit (it would swallow a
+    ``None`` returned by ``xcom_pull`` on a wrong ``task_id`` into a forever-green
+    empty pipeline); iterating ``None`` raises a natural ``TypeError``.
+    """
+    if pick not in _PICK_MODES:
+        raise ValueError(
+            f"pick must be one of {_PICK_MODES!r}, got {pick!r}"
+        )
+
+    hook = None  # one lazily-created S3Hook, reused across every S3 URI
+    pairs: list[tuple[str, Manifest]] = []
+    for manifest_path in manifests:
+        if is_s3_uri(manifest_path):
+            bucket, key = split_s3_uri(manifest_path)
+            if hook is None:
+                from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+
+                hook = S3Hook(aws_conn_id=aws_conn_id)
+            raw = hook.read_key(key, bucket_name=bucket)
+        else:
+            with open(manifest_path, "rb") as fh:
+                raw = fh.read()
+        pairs.append((manifest_path, Manifest.from_json(raw)))
+
+    return _resolve(pairs, pick)

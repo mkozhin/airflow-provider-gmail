@@ -334,7 +334,7 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
 **Files:**
 - Update: `src/airflow_provider_gmail/resolve.py`, `tests/test_resolve.py`
 
-- [ ] `resolve_attachments(manifests: list[str], pick: str = "all",
+- [x] `resolve_attachments(manifests: list[str], pick: str = "all",
   aws_conn_id: str = "aws_default") -> list[str]` — тонкая I/O-кромка над
   `_resolve`: валидация `pick` — ПЕРВОЙ строкой, ДО любого I/O
   (codex-ревью №2: иначе неизвестный `pick` даст `ClientError` вместо
@@ -344,28 +344,28 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
   `S3Hook.read_key` → `Manifest.from_json`; иначе — локальное чтение
   файла; собранные `pairs` → `_resolve` (который валидирует `pick`
   повторно — защита внутреннего шва)
-- [ ] жизненный цикл `S3Hook` (codex-ревью №2, паттерн проекта): ленивый
+- [x] жизненный цикл `S3Hook` (codex-ревью №2, паттерн проекта): ленивый
   импорт; ОДИН hook на вызов функции — создаётся при первом S3-URI,
   переиспользуется для остальных; `aws_conn_id` передаётся в конструктор;
   при входе только из локальных путей Amazon-провайдер НЕ импортируется
   (функция работает без extra `s3`)
-- [ ] пустой список `manifests` → `[]`; `None` НЕ маскировать — никаких
+- [x] пустой список `manifests` → `[]`; `None` НЕ маскировать — никаких
   `if not manifests` (проглотит `None` от `xcom_pull` по неверному task_id →
   вечно-зелёный пустой пайплайн); `None` падает естественным `TypeError`
   (решение грилинга 2026-07-21); битый манифест → `ManifestError` наверх
   (не глотать)
-- [ ] отсутствующий манифест (URI есть, объекта нет: удалили, ретеншн,
+- [x] отсутствующий манифест (URI есть, объекта нет: удалили, ретеншн,
   `aws_conn_id` смотрит не в то хранилище) → естественная ошибка наверх
   без обёртки и без предпроверки `check_for_key` (S3 → ClientError
   NoSuchKey/NoSuchBucket/AccessDenied, local → FileNotFoundError);
   `ManifestError` остаётся строго про содержимое (решение грилинга
   2026-07-21)
-- [ ] спецсимволы: после ужесточения `sanitize_filename` (Task 1) новые
+- [x] спецсимволы: после ужесточения `sanitize_filename` (Task 1) новые
   ключи URL-безопасны по построению; разбор всё равно ТОЛЬКО `split_s3_uri`
   из `paths.py` (защита в глубину — старые/чужие ключи могут содержать
   `? # %`); правило согласовано с планом tablefile (его
   `input_paths`-парсер работает прямым разбиением)
-- [ ] write tests (I/O-кромка, с моками): s3-чтение (мок `S3Hook`);
+- [x] write tests (I/O-кромка, с моками): s3-чтение (мок `S3Hook`);
   локальное чтение; битый JSON → `ManifestError` наверх; отсутствующий
   манифест — S3: мок кидает ClientError → наверх без обёртки, local:
   `FileNotFoundError`; пустой вход → `[]`; `None` → `TypeError` (не
@@ -376,7 +376,7 @@ parse    = TableFileToS3Operator(input_paths=resolve.output, ...)
   `aws_conn_id` доходит до конструктора, локальный вход не импортирует
   Amazon-провайдер; один сквозной тест с спецсимвольным ключом
   (`?`, `#`, `%`, пробел) как интеграционная страховка
-- [ ] run tests - must pass before next task
+- [x] run tests - must pass before next task
 
 ### Task 3: Оператор GmailResolveAttachmentsOperator
 

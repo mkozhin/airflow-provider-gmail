@@ -9,10 +9,12 @@ in isolation from the S3/local read edge (:func:`resolve_attachments`, Task 2c).
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
-from airflow_provider_gmail.manifest import FileEntry, Manifest
-from airflow_provider_gmail.resolve import _resolve
+from airflow_provider_gmail.manifest import FileEntry, Manifest, ManifestError
+from airflow_provider_gmail.resolve import _resolve, resolve_attachments
 
 BUCKET = "reports-bucket"
 
@@ -200,3 +202,181 @@ def test_uri_assembly_preserves_old_special_chars_defense_in_depth():
     assert _resolve([(_s3_manifest_path("MSG"), manifest)], "all") == [
         f"s3://{BUCKET}/{raw_key}"
     ]
+
+
+# =============================================================================
+# resolve_attachments — the public I/O edge (Task 2c). Mocks S3Hook; local reads
+# hit real files under tmp_path. The pure semantics live in the _resolve tests
+# above, so these focus on reading, the hook lifecycle, and error propagation.
+# =============================================================================
+
+
+@pytest.fixture
+def fake_s3(monkeypatch):
+    """Patch the lazily-imported ``S3Hook`` with an in-memory fake.
+
+    ``store`` is keyed by ``(bucket, key)`` → ``str`` body (``read_key`` returns a
+    decoded ``str``, like the real hook). ``instances`` records every constructed
+    hook so a test can assert exactly one hook per call and its ``aws_conn_id``.
+    A per-key ``errors`` map lets a test make ``read_key`` raise (missing object).
+    """
+    import airflow.providers.amazon.aws.hooks.s3 as s3mod
+
+    store: dict[tuple[str, str], str] = {}
+    errors: dict[tuple[str, str], Exception] = {}
+    instances: list = []
+
+    class _FakeS3Hook:
+        def __init__(self, aws_conn_id=None):
+            self.aws_conn_id = aws_conn_id
+            self.read_calls: list[tuple[str, str]] = []
+            instances.append(self)
+
+        def read_key(self, key, bucket_name=None) -> str:
+            self.read_calls.append((bucket_name, key))
+            if (bucket_name, key) in errors:
+                raise errors[(bucket_name, key)]
+            return store[(bucket_name, key)]
+
+    monkeypatch.setattr(s3mod, "S3Hook", _FakeS3Hook)
+    return SimpleNamespace(store=store, errors=errors, instances=instances)
+
+
+def _put(fake, msg: str, manifest: Manifest, dt: str = "2026-07-10") -> str:
+    """Store a manifest body in the fake S3 and return its full URI."""
+    uri = _s3_manifest_path(msg, dt)
+    bucket, key = uri[len("s3://") :].split("/", 1)
+    fake.store[(bucket, key)] = manifest.to_json().decode("utf-8")
+    return uri
+
+
+# -- s3 reading ---------------------------------------------------------------
+
+
+def test_reads_s3_manifest_and_reanchors(fake_s3):
+    manifest = _mk("MSG", "2026-07-10T09:00:00+03:00", [_s3_key("MSG", "report.xlsx")])
+    uri = _put(fake_s3, "MSG", manifest)
+    assert resolve_attachments([uri], "all") == [
+        f"s3://{BUCKET}/{_s3_key('MSG', 'report.xlsx')}"
+    ]
+
+
+def test_one_hook_reused_across_s3_uris_with_aws_conn_id(fake_s3):
+    m1 = _mk("A", "2026-07-10T09:00:00+03:00", [_s3_key("A", "a.xlsx")])
+    m2 = _mk("B", "2026-07-10T10:00:00+03:00", [_s3_key("B", "b.xlsx")])
+    u1, u2 = _put(fake_s3, "A", m1), _put(fake_s3, "B", m2)
+
+    result = resolve_attachments([u1, u2], "all", aws_conn_id="reports_s3")
+
+    assert result == [
+        f"s3://{BUCKET}/{_s3_key('A', 'a.xlsx')}",
+        f"s3://{BUCKET}/{_s3_key('B', 'b.xlsx')}",
+    ]
+    # Exactly one hook created for the whole call, bound to the given conn id,
+    # and it served both reads.
+    assert len(fake_s3.instances) == 1
+    assert fake_s3.instances[0].aws_conn_id == "reports_s3"
+    assert len(fake_s3.instances[0].read_calls) == 2
+
+
+# -- local reading ------------------------------------------------------------
+
+
+def test_reads_local_manifest_verbatim(fake_s3, tmp_path):
+    key = "/data/gmail/avito/dt=2026-07-10/MSG/report.xlsx"
+    manifest = _mk("MSG", "2026-07-10T09:00:00+03:00", [key])
+    path = tmp_path / "_manifest.json"
+    path.write_bytes(manifest.to_json())
+
+    assert resolve_attachments([str(path)], "all") == [key]
+    # A purely-local input must never construct an S3Hook (Amazon provider unused).
+    assert fake_s3.instances == []
+
+
+def test_local_input_does_not_construct_s3_hook(fake_s3, tmp_path):
+    # Even the lazy S3Hook import path must not run for local-only input.
+    manifest = _mk("M", "2026-07-10T09:00:00+03:00", ["/data/M/x.xlsx"])
+    path = tmp_path / "_manifest.json"
+    path.write_bytes(manifest.to_json())
+    resolve_attachments([str(path)], "latest")
+    assert fake_s3.instances == []
+
+
+# -- error propagation --------------------------------------------------------
+
+
+def test_broken_s3_manifest_raises_manifest_error(fake_s3):
+    uri = _s3_manifest_path("MSG")
+    bucket, key = uri[len("s3://") :].split("/", 1)
+    fake_s3.store[(bucket, key)] = "{ not json"
+    with pytest.raises(ManifestError):
+        resolve_attachments([uri], "all")
+
+
+def test_broken_local_manifest_raises_manifest_error(fake_s3, tmp_path):
+    path = tmp_path / "_manifest.json"
+    path.write_bytes(b"{ not json")
+    with pytest.raises(ManifestError):
+        resolve_attachments([str(path)], "all")
+
+
+def test_missing_s3_manifest_propagates_without_wrapping(fake_s3):
+    # No check_for_key pre-check: read_key raises and the error surfaces as-is.
+    from botocore.exceptions import ClientError
+
+    uri = _s3_manifest_path("GONE")
+    bucket, key = uri[len("s3://") :].split("/", 1)
+    err = ClientError(
+        {"Error": {"Code": "NoSuchKey", "Message": "missing"}}, "GetObject"
+    )
+    fake_s3.errors[(bucket, key)] = err
+    with pytest.raises(ClientError):
+        resolve_attachments([uri], "all")
+
+
+def test_missing_local_manifest_raises_file_not_found(fake_s3, tmp_path):
+    missing = tmp_path / "nope" / "_manifest.json"
+    with pytest.raises(FileNotFoundError):
+        resolve_attachments([str(missing)], "all")
+
+
+# -- empty / None inputs ------------------------------------------------------
+
+
+def test_empty_list_returns_empty(fake_s3):
+    assert resolve_attachments([], "all") == []
+    assert resolve_attachments([], "latest") == []
+    assert fake_s3.instances == []  # no I/O at all
+
+
+def test_none_input_raises_type_error_not_masked(fake_s3):
+    # None (e.g. an xcom_pull on a wrong task_id) must NOT be swallowed into [].
+    with pytest.raises(TypeError):
+        resolve_attachments(None, "all")
+
+
+# -- pick validated before any I/O --------------------------------------------
+
+
+def test_unknown_pick_raises_before_touching_storage(fake_s3):
+    manifest = _mk("MSG", "2026-07-10T09:00:00+03:00", [_s3_key("MSG", "x.xlsx")])
+    uri = _put(fake_s3, "MSG", manifest)
+    with pytest.raises(ValueError, match="pick must be one of"):
+        resolve_attachments([uri], "invalid")
+    # The manifest was never read — validation is the first line.
+    assert fake_s3.instances == []
+
+
+def test_unknown_pick_on_empty_list_raises_not_empty(fake_s3):
+    with pytest.raises(ValueError, match="pick must be one of"):
+        resolve_attachments([], "invalid")
+
+
+# -- special-char key end-to-end (defense in depth) ---------------------------
+
+
+def test_special_char_key_round_trip_through_s3_read(fake_s3):
+    raw_key = "gmail/avito/dt=2026-07-10/MSG/report?v=1#frag%20 space.xlsx"
+    manifest = _mk("MSG", "2026-07-10T09:00:00+03:00", [raw_key])
+    uri = _put(fake_s3, "MSG", manifest)
+    assert resolve_attachments([uri], "all") == [f"s3://{BUCKET}/{raw_key}"]
