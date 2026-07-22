@@ -21,6 +21,7 @@ from airflow_provider_gmail.utils.paths import (
     s3_key,
     s3_uri,
     split_s3_uri,
+    validate_prefix,
 )
 
 DT = "2026-07-12"
@@ -205,6 +206,61 @@ def test_split_s3_uri_empty_key_raises():
         split_s3_uri("s3://bucket")
     with pytest.raises(ValueError):
         split_s3_uri("s3://bucket/")
+
+
+# -- validate_prefix ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "",
+        "/",
+        "gmail/avito",
+        "gmail/avito/2026-07-10",
+        "gmail avito",  # space (\x20) — the first accepted codepoint above C0
+        "\x80",  # Unicode C1 control — deliberately accepted (guard stops at DEL)
+        "\x9f",  # upper C1 boundary — accepted for the same reason
+    ],
+)
+def test_validate_prefix_accepts_safe_values(prefix):
+    # A safe, path-like prefix (including empty, a bare slash, a space, a
+    # rendered date suffix and Unicode C1 controls) passes without raising.
+    validate_prefix(prefix)
+
+
+@pytest.mark.parametrize(
+    "bad_char",
+    [
+        "\\",  # backslash — never stripped from a prefix (no basename step)
+        "\x00",  # ASCII C0 lower boundary
+        "\x1f",  # ASCII C0 upper boundary
+        "\n",  # newline — a urlsplit()/parse_s3_url would silently strip it
+        "\r",
+        "\t",
+        "\x7f",  # DEL
+        "#",  # existing FORBIDDEN_KEY_CHARS members stay rejected
+        "%",
+    ],
+)
+def test_validate_prefix_rejects_hostile_char(bad_char):
+    prefix = f"gmail/a{bad_char}b"
+    with pytest.raises(ValueError) as exc:
+        validate_prefix(prefix)
+    msg = str(exc.value)
+    # The offending char is shown via repr, so control chars stay visible.
+    assert repr(bad_char) in msg
+    assert "prefix" in msg.lower()
+
+
+def test_validate_prefix_message_uses_repr_for_control_chars():
+    # An offending control character must be shown as an escaped repr, not
+    # emitted raw into the message.
+    with pytest.raises(ValueError) as exc:
+        validate_prefix("a\nb")
+    msg = str(exc.value)
+    assert "\\n" in msg
+    assert "\n" not in msg
 
 
 # -- is_s3_uri ---------------------------------------------------------------

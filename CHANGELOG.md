@@ -2,6 +2,8 @@
 
 ## [0.3.0] - 2026-07-21
 
+<!-- Date provisional until the v0.3.0 tag is cut; verify/adjust to the actual release date at tag time. -->
+
 ### Changed
 
 - **BREAKING: XCom now carries full paths, not bare object keys.** The download
@@ -21,13 +23,17 @@
   `sanitize_filename` now replaces every character from S3's own "characters to
   avoid" set (`{ } ^ [ ] < > ~ | # %` and the backtick) plus `?` and the double
   quote with `_`, so produced object keys are URL-safe by construction and a
-  third-party `s3://` URL parser works on them. `\` and `/` are unaffected (the
-  basename step already strips them, so `a\b\c.xlsx → c.xlsx` is preserved).
-  Attachments downloaded from now on get these new object names; and a rendered
-  `prefix` carrying any of those characters is now **rejected** with a
-  `ValueError` at the top of `execute()`/`poke()` (previously such a prefix was
-  silently allowed). `files[].name` in the manifest still stores the original
-  attachment name.
+  third-party `s3://` URL parser works on them. For **file names**, `\` and `/`
+  are unaffected (the basename step already strips them, so `a\b\c.xlsx →
+  c.xlsx` is preserved). Attachments downloaded from now on get these new object
+  names; `files[].name` in the manifest still stores the original attachment
+  name. Separately, a rendered `prefix` — which never passes through
+  `sanitize_filename` and reaches the object key verbatim — is now **rejected**
+  with a `ValueError` at the top of `execute()`/`poke()` if it carries any of
+  those characters, **or** a backslash (`\`), **or** an ASCII C0 control
+  (`ord < 0x20`) or `DEL` (`0x7F`) — so a `prefix` such as `reports\narchive`
+  can no longer produce a key a downstream `urlsplit()` would silently rewrite
+  (previously such a prefix was silently allowed).
 
 ### Added
 

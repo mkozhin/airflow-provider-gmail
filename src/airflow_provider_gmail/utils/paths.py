@@ -36,32 +36,49 @@ S3_URI_SCHEME = "s3://"
 
 #: Characters that make an S3 key hostile to third-party ``s3://`` URL parsers:
 #: S3's own "characters to avoid" (``{ } ^ [ ] < > ~ | # %`` and the backtick)
-#: plus ``?`` and the double quote. Killed at the source
-#: (:func:`airflow_provider_gmail.utils.mime.sanitize_filename` replaces each
-#: with ``_``) and rejected in a rendered ``prefix`` — so produced keys are
-#: URL-safe by construction. ``\`` and ``/`` are deliberately **absent**: the
-#: basename step of ``sanitize_filename`` strips them *before* the replacement
-#: runs, preserving the ``a\b\c.xlsx → c.xlsx`` contract.
+#: plus ``?`` and the double quote. This set is specced for **file names**:
+#: killed at the source (:func:`airflow_provider_gmail.utils.mime.sanitize_filename`
+#: replaces each with ``_``) so produced object keys are URL-safe by
+#: construction. ``\`` and ASCII control characters are deliberately **absent**:
+#: the basename step of ``sanitize_filename`` strips ``\``/``/`` and its own
+#: ``_CONTROL_CHARS`` step handles controls *before* the replacement runs,
+#: preserving the ``a\b\c.xlsx → c.xlsx`` contract. ``validate_prefix`` reuses
+#: this set but deliberately checks **more** (``\`` + ASCII C0/DEL), because a
+#: ``prefix`` never passes through ``sanitize_filename`` — see there.
 FORBIDDEN_KEY_CHARS = frozenset('?#%{}^[]<>~|"`')
 
 
 def validate_prefix(prefix: str) -> None:
     """Reject a **rendered** ``prefix`` carrying URL-hostile characters.
 
-    Attachment names are already stripped of :data:`FORBIDDEN_KEY_CHARS` at the
-    source (:func:`airflow_provider_gmail.utils.mime.sanitize_filename`), but the
+    Attachment names are sanitized at the source
+    (:func:`airflow_provider_gmail.utils.mime.sanitize_filename`), but the
     operator/sensor ``prefix`` is caller-supplied and reaches the object key
-    verbatim — a ``prefix`` with ``#`` or ``%`` would produce a key hostile to
-    third-party ``s3://`` URL parsers. Reject it so produced keys stay URL-safe
-    by construction.
+    verbatim — it never passes through ``sanitize_filename``. So the check here
+    is deliberately **wider** than :data:`FORBIDDEN_KEY_CHARS` (which is specced
+    for file names, where the basename/control-stripping steps already handle
+    ``\\`` and control characters). A character is rejected if it is in
+    :data:`FORBIDDEN_KEY_CHARS`, **or** it is a backslash (``\\``), **or** it is
+    an ASCII C0 control (``ord < 0x20``) or ``DEL`` (``0x7F``). A ``\\`` or a
+    control char (e.g. a newline or tab) would otherwise reach the key verbatim
+    and break the "keys are URL-safe by construction" guarantee — a downstream
+    ``urlsplit()``/``parse_s3_url`` would silently strip a newline and address a
+    *different* key (codex example: ``reports\\narchive``). Unicode C1 controls
+    (``0x80–0x9F``) are intentionally **not** rejected — consistent with
+    ``sanitize_filename``'s ``_CONTROL_CHARS`` (also capped at ``127``).
 
     Called on the **rendered** value at the top of ``execute()``/``poke()`` — not
     in ``__init__`` — because ``prefix`` is a template field: a Jinja expression
     such as ``{{ ds }}`` itself contains ``{``/``}`` (both forbidden), so an
     ``__init__`` check would reject valid templates. ``/`` is allowed (a prefix is
-    a path). Raises :class:`ValueError` naming the offending characters.
+    a path). Raises :class:`ValueError` naming the offending characters (via
+    ``!r`` so control characters are visible).
     """
-    bad = sorted(set(prefix) & FORBIDDEN_KEY_CHARS)
+    bad = sorted(
+        ch
+        for ch in set(prefix)
+        if ch in FORBIDDEN_KEY_CHARS or ch == "\\" or ord(ch) < 0x20 or ord(ch) == 0x7F
+    )
     if bad:
         raise ValueError(
             f"prefix contains characters not allowed in an object key: "
