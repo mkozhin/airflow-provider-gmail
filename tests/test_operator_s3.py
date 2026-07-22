@@ -531,3 +531,16 @@ def test_corrupt_manifest_overwrite_false_raises_manifest_error():
     hook = FakeGmailHook([msg])
     with pytest.raises(ManifestError):
         _run(op, hook)
+
+
+def test_non_utf8_manifest_raises_manifest_error():
+    # A non-UTF-8 body makes read_key's .decode("utf-8") raise UnicodeDecodeError
+    # after check_for_key; Manifest.from_s3 wraps it into ManifestError instead of
+    # letting a bare UnicodeDecodeError leak out of execute().
+    store: dict = {}
+    msg = _message("msg1", "a.xlsx")
+    store[_manifest_key(msg)] = b"\xff"
+    op = _make_op(store, overwrite=False)
+    hook = FakeGmailHook([msg])
+    with pytest.raises(ManifestError):
+        _run(op, hook)

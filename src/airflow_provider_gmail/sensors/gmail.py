@@ -329,18 +329,19 @@ class GmailAttachmentToS3Sensor(GmailAttachmentSensor):
         not skip), so it is **not** counted as processed and this returns
         ``False``. Only a manifest from a different run returns ``True``.
 
-        Reads and **validates** the manifest through :meth:`Manifest.from_json`
-        (so a corrupt manifest raises :class:`ManifestError` and fails the poke
-        instead of being silently counted as processed), then compares
-        ``manifest.run_id`` to the current ``run_id``. The key is built from the
-        shared :func:`manifest_key`, the same join the S3 operator writes.
+        Reads and **validates** the manifest through :meth:`Manifest.from_s3`
+        (so a corrupt manifest — invalid JSON *or* non-UTF-8 bytes — raises
+        :class:`ManifestError` and fails the poke instead of being silently
+        counted as processed), then compares ``manifest.run_id`` to the current
+        ``run_id``. The key is built from the shared :func:`manifest_key`, the
+        same join the S3 operator writes.
         """
         dt = to_local_date(msg.internal_date, self.timezone).isoformat()
         key = manifest_key(self.prefix, dt, msg.message_id)
         hook = self._s3_hook()
         if not hook.check_for_key(key, bucket_name=self.bucket):
             return False
-        manifest = Manifest.from_json(hook.read_key(key, bucket_name=self.bucket))
+        manifest = Manifest.from_s3(hook, self.bucket, key)
         return manifest.run_id != run_id
 
     def poke(self, context: Any) -> bool:

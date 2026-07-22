@@ -113,7 +113,9 @@ def resolve_attachments(
       input never touches the Amazon provider (the extra ``s3`` is not required).
     - **local path**: read straight off disk as bytes.
 
-    Both feed :meth:`Manifest.from_json`, so a broken manifest raises
+    An S3 manifest feeds :meth:`Manifest.from_s3` and a local one
+    :meth:`Manifest.from_json`, so a broken manifest — invalid JSON *or* non-UTF-8
+    bytes — raises
     :class:`~airflow_provider_gmail.manifest.ManifestError` up to the caller (never
     swallowed). A **missing** manifest (the URI/path is well-formed but the object
     is gone — deleted, retention, or ``aws_conn_id`` points at the wrong store)
@@ -141,10 +143,11 @@ def resolve_attachments(
                 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
                 hook = S3Hook(aws_conn_id=aws_conn_id)
-            raw = hook.read_key(key, bucket_name=bucket)
+            manifest = Manifest.from_s3(hook, bucket, key)
         else:
             with open(manifest_path, "rb") as fh:
                 raw = fh.read()
-        pairs.append((manifest_path, Manifest.from_json(raw)))
+            manifest = Manifest.from_json(raw)
+        pairs.append((manifest_path, manifest))
 
     return _resolve(pairs, pick)

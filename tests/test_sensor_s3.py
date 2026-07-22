@@ -328,6 +328,18 @@ def test_structurally_invalid_manifest_raises_manifest_error():
         _poke(sensor, FakeGmailHook([msg]))
 
 
+def test_non_utf8_manifest_raises_manifest_error():
+    # A non-UTF-8 body makes read_key's .decode("utf-8") raise UnicodeDecodeError
+    # after check_for_key; Manifest.from_s3 wraps it into ManifestError so the
+    # poke fails loudly instead of leaking a bare UnicodeDecodeError.
+    store: dict = {}
+    msg = _message("msg1", "a.xlsx")
+    store[_manifest_key(msg)] = b"\xff"
+    sensor = _make_sensor(store)
+    with pytest.raises(ManifestError):
+        _poke(sensor, FakeGmailHook([msg]))
+
+
 # -- over-limit key fails fast with the same clear ValueError ----------------
 
 

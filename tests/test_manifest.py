@@ -230,6 +230,69 @@ def test_no_low_level_exception_leaks(raw):
             pytest.fail(f"low-level exception leaked: {exc!r}")
 
 
+# --- from_s3: the S3-read seam --------------------------------------------
+
+
+class _FakeReadHook:
+    """Duck-typed stand-in: only ``read_key`` is called by ``Manifest.from_s3``.
+
+    ``body`` is returned decoded (like the real ``S3Hook.read_key``); ``exc`` is
+    raised instead, to model a hook whose ``read_key`` fails.
+    """
+
+    def __init__(self, body: str | None = None, exc: Exception | None = None):
+        self.body = body
+        self.exc = exc
+        self.calls: list[tuple[str, str]] = []
+
+    def read_key(self, key, bucket_name=None) -> str:
+        self.calls.append((bucket_name, key))
+        if self.exc is not None:
+            raise self.exc
+        assert self.body is not None
+        return self.body
+
+
+def test_from_s3_parses_valid_utf8_body():
+    hook = _FakeReadHook(body=json.dumps(LAYER2_SCHEMA))
+    m = Manifest.from_s3(hook, "reports", "gmail/avito/_manifest.json")
+    assert m == _sample_manifest()
+    # duck-typed: called read_key once with (bucket_name, key)
+    assert hook.calls == [("reports", "gmail/avito/_manifest.json")]
+
+
+def test_from_s3_non_utf8_body_raises_manifest_error():
+    # The real S3Hook.read_key decodes UTF-8 before parsing; a non-UTF-8 body
+    # surfaces as UnicodeDecodeError, which from_s3 wraps into ManifestError so
+    # corrupt content matches the local (bytes) path.
+    try:
+        b"\xff".decode("utf-8")
+    except UnicodeDecodeError as exc:
+        decode_error = exc
+    hook = _FakeReadHook(exc=decode_error)
+    with pytest.raises(ManifestError):
+        Manifest.from_s3(hook, "reports", "k")
+
+
+def test_from_s3_other_read_error_propagates_unwrapped():
+    # A missing object raises before the decode (S3 ClientError-like); the narrow
+    # except UnicodeDecodeError must not touch it — it propagates as-is.
+    class _NoSuchKey(Exception):
+        pass
+
+    err = _NoSuchKey("missing")
+    hook = _FakeReadHook(exc=err)
+    with pytest.raises(_NoSuchKey):
+        Manifest.from_s3(hook, "reports", "k")
+
+
+def test_from_s3_invalid_json_body_raises_manifest_error():
+    # A valid-UTF-8 but non-JSON body still becomes ManifestError via from_json.
+    hook = _FakeReadHook(body="{ not json")
+    with pytest.raises(ManifestError):
+        Manifest.from_s3(hook, "reports", "k")
+
+
 # --- decide: ADR-0001 tri-state -------------------------------------------
 
 

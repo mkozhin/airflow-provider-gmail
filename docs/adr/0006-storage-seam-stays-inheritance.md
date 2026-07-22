@@ -37,4 +37,5 @@
   композиция начнёт окупаться самостоятельно).
 - Чистый модуль `Manifest` (принят отдельно) от этого не страдает: чтение остаётся
   protected-методом `_read_manifest(rel_dir) -> Manifest | None` на наследнике
-  (S3 парсит через `Manifest.from_json`, local → `None`).
+  (S3 парсит через `Manifest.from_s3` — обёртка над `read_key` + `from_json`,
+  local → `None`).

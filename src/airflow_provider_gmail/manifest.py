@@ -1,7 +1,10 @@
 """``Manifest`` — the pure domain module for the ``_manifest.json`` contract.
 
 This module is deliberately *pure*: no Airflow, no S3, no Gmail, no paths and no
-timezones (see ``CONTEXT.md``). It owns two things and nothing else:
+timezones (see ``CONTEXT.md``). The one S3-read seam it exposes,
+:meth:`Manifest.from_s3`, keeps the imports pure: the ``hook`` is injected and
+only duck-typed (``.read_key`` is the sole call), so ``S3Hook`` is never
+imported here. It owns two things and nothing else:
 
 - the **content and serialization** of the manifest that layer 1 writes next to
   a message's attachments and passes down to layer 2 (schema is single-sourced
@@ -213,6 +216,30 @@ class Manifest:
             run_id=obj["run_id"],
             files=files,
         )
+
+    @classmethod
+    def from_s3(cls, hook: Any, bucket: str, key: str) -> "Manifest":
+        """Read + parse an S3 manifest via ``hook.read_key`` (str, UTF-8-decoded).
+
+        The single S3-read seam for the three call sites (resolver, S3 operator,
+        S3 sensor), so the corruption contract lives in one place. ``hook`` is
+        duck-typed — only ``.read_key(key, bucket_name=...)`` is called — so this
+        pure module never imports ``S3Hook``.
+
+        ``S3Hook.read_key`` decodes the body as UTF-8 *before* parsing, so a
+        non-UTF-8 body raises ``UnicodeDecodeError`` (which the local bytes path
+        would have surfaced as a :class:`ManifestError` via ``from_json``); wrap
+        it so corrupt content surfaces the same way everywhere. A **missing**
+        object raises *before* the decode (S3 ``ClientError``) and is
+        deliberately **not** caught here — it stays the caller's own contract.
+        """
+        try:
+            raw = hook.read_key(key, bucket_name=bucket)
+        except UnicodeDecodeError as exc:
+            raise ManifestError(
+                f"manifest at s3://{bucket}/{key} is not valid UTF-8: {exc}"
+            ) from exc
+        return cls.from_json(raw)
 
 
 class Decision(enum.Enum):

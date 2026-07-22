@@ -243,8 +243,9 @@ class GmailAttachmentsBaseOperator(BaseOperator):
         """Read the manifest under ``rel_dir``, or ``None`` when absent.
 
         ``rel_dir`` (of the form ``dt=YYYY-MM-DD/<message_id>``) is assembled by
-        the base class; the subclass only reads bytes and parses them through
-        :meth:`Manifest.from_json`. Returns the **whole** :class:`Manifest` (not a
+        the base class; the subclass only reads and parses it (the S3 subclass
+        via :meth:`Manifest.from_s3`, which wraps ``read_key`` +
+        :meth:`Manifest.from_json`). Returns the **whole** :class:`Manifest` (not a
         bare ``run_id``) so :func:`decide` can resolve the delivery tri-state.
         Abstract: S3 reads + parses (Task 9), local always returns ``None``
         (Task 10).
@@ -559,15 +560,15 @@ class GmailAttachmentsToS3Operator(GmailAttachmentsBaseOperator):
         The key is ``<prefix>/<rel_dir>/_manifest.json`` via the same
         :func:`s3_key` the writes use (so operator and sensor agree on where the
         manifest lives, and the 1024-byte whole-key limit is enforced here too),
-        with ``check_for_key`` + ``read_key``. ``S3Hook.read_key`` returns ``str``
-        (decoded), which :meth:`Manifest.from_json` accepts; validation /
-        ``ManifestError`` live in the manifest module, not here.
+        with ``check_for_key`` + :meth:`Manifest.from_s3`. The read/parse/decode
+        contract lives in the manifest module, not here: a corrupt manifest
+        (invalid JSON *or* non-UTF-8 bytes) surfaces as ``ManifestError``.
         """
         key = s3_key(self.prefix, rel_dir, MANIFEST_FILENAME)
         hook = self._s3_hook()
         if not hook.check_for_key(key, bucket_name=self.bucket):
             return None
-        return Manifest.from_json(hook.read_key(key, bucket_name=self.bucket))
+        return Manifest.from_s3(hook, self.bucket, key)
 
     def _filter_processed_label(self) -> bool:
         """Never filter the S3 search by label (ADR-0001) — correctness is the manifest."""

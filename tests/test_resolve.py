@@ -337,6 +337,20 @@ def test_broken_local_manifest_raises_manifest_error(fake_s3, tmp_path):
         resolve_attachments([str(path)], "all")
 
 
+def test_non_utf8_s3_manifest_raises_manifest_error(fake_s3):
+    # The real read_key decodes UTF-8; a non-UTF-8 body raises UnicodeDecodeError
+    # *before* parsing. Manifest.from_s3 wraps it into ManifestError so a corrupt
+    # S3 manifest surfaces the same way as the local (bytes) path.
+    uri = _s3_manifest_path("MSG")
+    bucket, key = uri[len("s3://") :].split("/", 1)
+    try:
+        b"\xff".decode("utf-8")
+    except UnicodeDecodeError as exc:
+        fake_s3.errors[(bucket, key)] = exc
+    with pytest.raises(ManifestError):
+        resolve_attachments([uri], "all")
+
+
 def test_missing_s3_manifest_propagates_without_wrapping(fake_s3):
     # No check_for_key pre-check: read_key raises and the error surfaces as-is.
     from botocore.exceptions import ClientError
