@@ -351,6 +351,20 @@ def test_non_utf8_s3_manifest_raises_manifest_error(fake_s3):
         resolve_attachments([uri], "all")
 
 
+def test_non_utf8_local_manifest_raises_manifest_error(tmp_path):
+    # Paired with test_non_utf8_s3_manifest_raises_manifest_error: a FULLY VALID
+    # manifest written to disk in UTF-16 is rejected by the strict-UTF-8 bytes
+    # decode in Manifest.from_json (isolating the encoding check from schema
+    # validation), so a corrupt local manifest surfaces the same way as S3 —
+    # ManifestError "not valid UTF-8", uniformly across both paths.
+    manifest = _mk("MSG", "2026-07-10T09:00:00+03:00", [_s3_key("MSG", "report.xlsx")])
+    valid_json = manifest.to_json().decode("utf-8")
+    path = tmp_path / "_manifest.json"
+    path.write_bytes(valid_json.encode("utf-16"))
+    with pytest.raises(ManifestError, match="not valid UTF-8"):
+        resolve_attachments([str(path)], "all")
+
+
 def test_missing_s3_manifest_propagates_without_wrapping(fake_s3):
     # No check_for_key pre-check: read_key raises and the error surfaces as-is.
     from botocore.exceptions import ClientError

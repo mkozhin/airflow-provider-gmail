@@ -929,7 +929,11 @@ return delivered                                # → XCom: только пис�
         готовит вызывающий — ADR-0002); `name` — исходное имя, `size` — `len(data)` после декодирования
       - **`from_json` принимает `str | bytes`** (`S3Hook.read_key()` отдаёт `str`, а
         локальное чтение — `bytes`): нормализовать вход внутри (`raw.encode()` при `str`)
-        до `json.loads`. **Полный контракт ошибок — единый `ManifestError`**: любое
+        до `json.loads`.
+        ➕ superseded планом 20260722-manifest-from-json-strict-utf8: `bytes`
+        строго-UTF-8-декодируются (не-UTF-8/BOM → `ManifestError`), `str` парсится
+        напрямую — без `raw.encode()`-round-trip.
+        **Полный контракт ошибок — единый `ManifestError`**: любое
         нарушение минимальной схемы транслируется в `ManifestError`, наружу не утекают
         `KeyError`/`TypeError`/`ValueError`/`json.JSONDecodeError`. Минимальная схема
         (проверяется явно): корректный JSON-объект; обязательные верхнеуровневые ключи

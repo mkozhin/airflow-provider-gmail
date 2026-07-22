@@ -19,11 +19,13 @@ attempt of the *current* run (deliver, do not re-download) from one written by a
 The serialized key for the sender is ``"from"`` (matching the layer-2 schema);
 the dataclass field is ``from_`` because ``from`` is a Python keyword.
 
-Any violation of the minimal schema in :meth:`Manifest.from_json` is raised as a
-single :class:`ManifestError`; ``KeyError`` / ``TypeError`` / ``ValueError`` /
-``json.JSONDecodeError`` never leak out. Corruption handling is concentrated
-here rather than duplicated across storage backends, and a corrupt manifest is a
-loud failure rather than a silently-stuck message.
+Any violation of the minimal schema in :meth:`Manifest.from_json`, as well as
+non-UTF-8 bytes, is raised as a single :class:`ManifestError`;
+``UnicodeDecodeError`` / ``KeyError`` /
+``TypeError`` / ``ValueError`` / ``json.JSONDecodeError`` never leak out.
+Corruption handling is concentrated here rather than duplicated across storage
+backends, and a corrupt manifest is a loud failure rather than a
+silently-stuck message.
 """
 
 from __future__ import annotations
@@ -37,11 +39,11 @@ from typing import Any
 class ManifestError(Exception):
     """Raised on *any* minimal-schema violation while parsing a manifest.
 
-    :meth:`Manifest.from_json` translates every underlying failure (broken JSON,
-    non-object, missing required key including ``run_id``, ``files`` not a list,
-    element without ``path``, wrong types) into this single exception. No
-    ``KeyError`` / ``TypeError`` / ``ValueError`` / ``json.JSONDecodeError``
-    escapes to the caller.
+    :meth:`Manifest.from_json` translates every underlying failure (non-UTF-8
+    bytes, broken JSON, non-object, missing required key including ``run_id``,
+    ``files`` not a list, element without ``path``, wrong types) into this single
+    exception. No ``UnicodeDecodeError`` / ``KeyError`` / ``TypeError`` /
+    ``ValueError`` / ``json.JSONDecodeError`` escapes to the caller.
     """
 
 
@@ -126,13 +128,23 @@ class Manifest:
         """Parse and validate a manifest, raising :class:`ManifestError` on any
         minimal-schema violation.
 
-        ``raw`` may be ``str`` (e.g. ``S3Hook.read_key()``) or ``bytes`` (local
-        read); ``str`` is normalized via ``.encode()`` before ``json.loads``.
+        ``raw`` may be ``str`` (e.g. ``S3Hook.read_key()``, already decoded) or
+        ``bytes`` (local read). A ``str`` is parsed directly; ``bytes`` must be
+        canonical BOM-less UTF-8 — a non-UTF-8 body raises :class:`ManifestError`,
+        matching the S3 path. A leading BOM is rejected too (json's UTF-16/32/BOM
+        auto-detection on ``bytes`` is deliberately not relied on), so any
+        non-canonically-UTF-8 content (UTF-16, UTF-32 or UTF-8-with-BOM) fails
+        uniformly on both the local and S3 paths.
         """
-        if isinstance(raw, str):
-            raw = raw.encode("utf-8")
+        if isinstance(raw, bytes):
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ManifestError(f"manifest is not valid UTF-8: {exc}") from exc
+        else:
+            text = raw
         try:
-            obj: Any = json.loads(raw)
+            obj: Any = json.loads(text)
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
             raise ManifestError(f"manifest is not valid JSON: {exc}") from exc
 
@@ -236,9 +248,11 @@ class Manifest:
         try:
             raw = hook.read_key(key, bucket_name=bucket)
         except UnicodeDecodeError as exc:
-            raise ManifestError(
-                f"manifest at s3://{bucket}/{key} is not valid UTF-8: {exc}"
-            ) from exc
+            msg = (
+                f"manifest in bucket {bucket!r} at key {key!r} "
+                f"is not valid UTF-8: {exc}"
+            )
+            raise ManifestError(msg) from exc
         return cls.from_json(raw)
 
 

@@ -31,7 +31,7 @@ MANIFEST_FILENAME = "_manifest.json"
 #: S3 caps a *whole* object key at 1024 UTF-8 bytes (not per component).
 S3_MAX_KEY_BYTES = 1024
 
-#: The ``s3://`` URI scheme — the **only** place this literal lives in ``src``.
+#: The ``s3://`` URI scheme — the **only** place this literal is used to build URIs.
 S3_URI_SCHEME = "s3://"
 
 #: Characters that make an S3 key hostile to third-party ``s3://`` URL parsers:

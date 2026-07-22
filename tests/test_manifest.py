@@ -203,6 +203,47 @@ def test_size_bool_raises_manifest_error():
         Manifest.from_json(json.dumps(data))
 
 
+# --- error contract: non-UTF-8 / BOM on the local bytes path --------------
+
+
+@pytest.mark.parametrize("encoding", ["utf-16", "utf-32"])
+def test_non_utf8_bytes_raises_not_valid_utf8(encoding):
+    # UTF-16/UTF-32-encoded bytes used to be silently accepted (json.loads
+    # auto-detects the BOM); the local bytes path now decodes strictly as UTF-8
+    # first, so they surface as a ManifestError pinned to "not valid UTF-8" —
+    # uniform with the S3 path. A type-only assertion would pass on the old code
+    # for b"\xff", so the match pins the new branch.
+    raw = json.dumps(LAYER2_SCHEMA).encode(encoding)
+    with pytest.raises(ManifestError, match="not valid UTF-8"):
+        Manifest.from_json(raw)
+
+
+def test_raw_non_utf8_bytes_raises_not_valid_utf8():
+    # A bare non-UTF-8 byte: previously ManifestError("... not valid JSON ...")
+    # (UnicodeDecodeError is a ValueError subclass); now the dedicated UTF-8
+    # branch produces "not valid UTF-8". This direct local-bytes case had no
+    # prior test.
+    with pytest.raises(ManifestError, match="not valid UTF-8") as excinfo:
+        Manifest.from_json(b"\xff")
+    assert isinstance(excinfo.value.__cause__, UnicodeDecodeError)
+
+
+def test_utf8_with_bom_bytes_raises_manifest_error():
+    # UTF-8-with-BOM (utf-8-sig): the leading BOM is no longer stripped and
+    # survives to json.loads, so it becomes a ManifestError (via the JSON
+    # branch). Only the type is pinned here, not the message.
+    raw = json.dumps(LAYER2_SCHEMA).encode("utf-8-sig")
+    with pytest.raises(ManifestError):
+        Manifest.from_json(raw)
+
+
+def test_utf8_with_bom_str_raises_manifest_error():
+    # str-analogue: a leading BOM character reaches json.loads and fails.
+    text = "﻿" + json.dumps(LAYER2_SCHEMA)
+    with pytest.raises(ManifestError):
+        Manifest.from_json(text)
+
+
 @pytest.mark.parametrize(
     "raw",
     [
@@ -270,8 +311,15 @@ def test_from_s3_non_utf8_body_raises_manifest_error():
     except UnicodeDecodeError as exc:
         decode_error = exc
     hook = _FakeReadHook(exc=decode_error)
-    with pytest.raises(ManifestError):
-        Manifest.from_s3(hook, "reports", "k")
+    with pytest.raises(ManifestError, match="not valid UTF-8") as excinfo:
+        Manifest.from_s3(hook, "reports", "gmail/avito/_manifest.json")
+    # The neutral message keeps the object context (bucket/key) but must not
+    # reintroduce the s3:// literal (S3_URI_SCHEME is the only place it lives).
+    # Use a distinctive key that cannot appear incidentally in the template.
+    msg = str(excinfo.value)
+    assert "reports" in msg
+    assert "gmail/avito/_manifest.json" in msg
+    assert "s3://" not in msg
 
 
 def test_from_s3_other_read_error_propagates_unwrapped():
