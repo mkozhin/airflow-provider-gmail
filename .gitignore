@@ -50,6 +50,8 @@ env/
 ENV/
 .python-version
 
+uv.lock
+
 # Environment / secrets
 .env
 *.env
