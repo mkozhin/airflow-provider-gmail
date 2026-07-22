@@ -1,8 +1,6 @@
 # Changelog
 
-## [0.3.0] - 2026-07-21
-
-<!-- Date provisional until the v0.3.0 tag is cut; verify/adjust to the actual release date at tag time. -->
+## [0.3.0] - 2026-07-22
 
 ### Changed
 
