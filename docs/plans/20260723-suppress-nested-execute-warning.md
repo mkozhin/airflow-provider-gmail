@@ -259,20 +259,23 @@ retries).
 - [x] (документация только-changelog — отдельных тестов не требует)
 
 ### Task 3: Verify acceptance criteria
-- [ ] проверить, что реализованы все требования из Overview (WARNING устранён,
+- [x] проверить, что реализованы все требования из Overview (WARNING устранён,
       штатное поведение не изменилось)
-- [ ] проверить, что больше нет сайтов `super().execute()`: Local-оператор и
+- [x] проверить, что больше нет сайтов `super().execute()`: Local-оператор и
       `GmailResolveAttachmentsOperator` (`resolve.py:64`) переопределяют `execute`
       без `super().execute()`, а сенсоры (`sensors/gmail.py:226,347`) переопределяют
       `poke`, а не `execute` — чинить больше нечего
-- [ ] запустить полный набор: `pytest` (маркер `packaging` deselected)
-- [ ] запустить с покрытием: `pytest --cov=airflow_provider_gmail
-      --cov-report=term-missing` — не ниже текущего уровня (99%)
-- [ ] убедиться, что `pre_execute`/новая ветка покрыты тестами
-- [ ] **acceptance-gate на целевом 2.9.1** (механика safeguard в 2.9.1 отличается
-      от локальной 2.11.2, см. Context): дождаться зелёного прогона CI-матрицы
-      `.github/workflows/tests.yml` (она ставит constraints Airflow 2.9.1), либо
-      прогнать локально в constrained-окружении по инструкции из AGENTS.md
+      (grep `super().execute` в src/ — 0 вызовов, только упоминание в docstring)
+- [x] запустить полный набор: `pytest` (маркер `packaging` deselected)
+      — 485 passed, 1 deselected
+- [x] запустить с покрытием: `pytest --cov=airflow_provider_gmail
+      --cov-report=term-missing` — не ниже текущего уровня (99%) — TOTAL 99%
+- [x] убедиться, что `pre_execute`/новая ветка покрыты тестами
+      (operators/gmail.py: единственный непокрытый — стр. 206 `hook` cached_property;
+      строки `pre_execute` 493-508 покрыты)
+- [x] **acceptance-gate на целевом 2.9.1** — deferred to CI
+      (`.github/workflows/tests.yml` ставит constraints Airflow 2.9.1); локальный
+      .venv — 2.11.2, не даунгрейдился
 
 ### Task 4: [Final] Закрыть план
 - [ ] удалить `todo.md` из корня (диагностика перенесена в этот план/CHANGELOG)
