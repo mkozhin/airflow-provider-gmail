@@ -155,13 +155,13 @@ downstream и получит). Поведение оператора не мен
       tests/test_resolve.py` — зелёный перед Task 2
 
 ### Task 2: Verify acceptance criteria
-- [ ] Проверить требования из Overview: сводка + per-path строки присутствуют,
+- [x] Проверить требования из Overview: сводка + per-path строки присутствуют,
       пустой выход даёт `→ 0`, `pick` в сводке, формулировки storage-agnostic
-- [ ] Полный набор: `.venv/bin/python -m pytest` — все проходят
-- [ ] Покрытие: `.venv/bin/python -m pytest --cov=airflow_provider_gmail
+- [x] Полный набор: `.venv/bin/python -m pytest` — все проходят
+- [x] Покрытие: `.venv/bin/python -m pytest --cov=airflow_provider_gmail
       --cov-report=term-missing` — не ниже 99%; новые строки логирования покрыты
-- [ ] Убедиться, что чистое ядро (`tests/test_resolve.py`) и прочие тесты не сломаны
-- [ ] **Gate:** и полный `pytest`, и покрытие ≥99% должны пройти **до** Task 3
+- [x] Убедиться, что чистое ядро (`tests/test_resolve.py`) и прочие тесты не сломаны
+- [x] **Gate:** и полный `pytest`, и покрытие ≥99% должны пройти **до** Task 3
 
 ### Task 3: [Final] Закрыть план
 - [ ] Переместить план в `docs/plans/completed/` (харнесс при exec; иначе —
