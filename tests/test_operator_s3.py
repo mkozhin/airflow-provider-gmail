@@ -281,6 +281,11 @@ def test_execute_logs_no_warning_when_invoked_with_sentinel(caplog):
     with caplog.at_level(logging.WARNING):
         op_b.execute(ctx, **sentinel_kw)
     assert "cannot be called outside TaskInstance!" not in caplog.text
+    # NB: the sentinel branch stores "GmailAttachmentsToS3Operator__sentinel" in
+    # ExecutorSafeguard's process-wide thread-local and never pops it (only the
+    # no-sentinel path pops, and it pops under the BaseOperator.execute qualname
+    # key, which never matches). The lingering entry is harmless: no later test
+    # picks it up, and none asserts the S3 warning after this one.
 
 
 # -- XCom URI vs manifest key divergence (ADR-0007) --------------------------
