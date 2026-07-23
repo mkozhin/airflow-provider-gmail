@@ -424,7 +424,7 @@ class GmailAttachmentsBaseOperator(BaseOperator):
                     msg.message_id,
                     _one_line(manifest.subject) or "(no subject)",
                     len(manifest.files),
-                    ", ".join(_one_line(f.name) for f in manifest.files),
+                    ", ".join(repr(_one_line(f.name)) for f in manifest.files),
                     manifest_xcom_path,
                 )
                 continue
@@ -473,7 +473,7 @@ class GmailAttachmentsBaseOperator(BaseOperator):
                 msg.message_id,
                 _one_line(msg.subject) or "(no subject)",
                 len(files),
-                ", ".join(_one_line(f.name) for f in files),
+                ", ".join(repr(_one_line(f.name)) for f in files),
                 manifest_xcom_path,
             )
 

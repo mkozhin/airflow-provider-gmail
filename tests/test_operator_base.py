@@ -950,6 +950,22 @@ def test_download_line_collapses_newline_in_filename(caplog):
     assert "re port.xlsx" in rendered
 
 
+def test_download_line_escapes_control_char_in_filename(caplog):
+    # A non-whitespace control char (ANSI ESC) in an untrusted filename must be
+    # repr-escaped, not emitted raw — symmetric with the %r-rendered subject.
+    msg = _message("msg1", "\x1b[31mevil.xlsx")
+    op = _DictOperator(task_id="t", source="avito")
+    hook = _FakeHook([msg])
+    with caplog.at_level(logging.INFO):
+        _run(op, hook)
+
+    records = _download_records(caplog)
+    assert len(records) == 1
+    rendered = records[0].getMessage()
+    assert "\x1b" not in rendered  # raw ESC never reaches the log
+    assert "\\x1b" in rendered  # rendered as its repr escape instead
+
+
 def test_write_failure_emits_no_download_line_and_no_summary(caplog):
     # A manifest-write failure must raise BEFORE the per-message "Downloaded"
     # line, and the summary must not be emitted (exception propagates first).
