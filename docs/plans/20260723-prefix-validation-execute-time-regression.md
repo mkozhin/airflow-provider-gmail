@@ -247,21 +247,21 @@ callback, ставящий `prefix = "gmail/a#b"` после `pre_execute`, да
       полный набор — в Task 2)
 
 ### Task 2: Проверка приёмочных критериев (verification)
-- [ ] Grep `src/` на **исполняемый** вызов `return super().execute(` (или
+- [x] Grep `src/` на **исполняемый** вызов `return super().execute(` (или
       `super().execute(` вне docstring'ов) — ожидать ZERO вызовов в коде.
       Текстовые упоминания `super().execute()` внутри docstring'ов допустимы и
       ожидаемы — не считать их за находку
-- [ ] Подтвердить, что `pre_execute` больше не определён в
+- [x] Подтвердить, что `pre_execute` больше не определён в
       `GmailAttachmentsToS3Operator`
-- [ ] Полный набор: `.venv/bin/python -m pytest` — все проходят
-- [ ] Покрытие: `.venv/bin/python -m pytest --cov=airflow_provider_gmail
+- [x] Полный набор: `.venv/bin/python -m pytest` — все проходят
+- [x] Покрытие: `.venv/bin/python -m pytest --cov=airflow_provider_gmail
       --cov-report=term-missing` — не ниже 99%; новый seam `_run`/`execute` и
       регресс-тест покрыты
-- [ ] **2.9.1 acceptance-gate** — механика сейфгарда в 2.9.1 отличается от
-      локальной 2.11.2, поэтому authoritative-проверка — только зелёная CI-матрица
-      `.github/workflows/tests.yml` (ставит constraints Airflow 2.9.1). Локально
-      `.venv` = 2.11.2, downgrade не делать. Пока CI не зелёная, ставить этому
-      пункту `⚠️` (не `[x]`) — это открытый блокер до мержа
+- ⚠️ **2.9.1 acceptance-gate** — pending green CI (`.github/workflows/tests.yml`);
+      local `.venv` = 2.11.2, not downgraded; open blocker before merge. Механика
+      сейфгарда в 2.9.1 отличается от локальной 2.11.2, поэтому authoritative-проверка
+      — только зелёная CI-матрица `.github/workflows/tests.yml` (ставит constraints
+      Airflow 2.9.1). Пока CI не зелёная — это открытый блокер до мержа
 
 ### Task 3: [Final] Закрыть план
 - [ ] Переместить план в `docs/plans/completed/` (делает харнесс при exec-прогоне;
