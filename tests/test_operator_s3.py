@@ -294,15 +294,14 @@ def test_execute_logs_no_warning_when_invoked_with_sentinel(caplog):
     with caplog.at_level(logging.WARNING):
         op_b.execute(ctx, **sentinel_kw)
     assert "cannot be called outside TaskInstance!" not in caplog.text
-    # Clear the leftover sentinel (see `_clear_safeguard_sentinel`) to keep tests
-    # isolated; guarded so it's a no-op on Airflow 2.9.1 (no thread-local mechanism).
+    # Clear the leftover sentinel to keep tests isolated — see
+    # `_clear_safeguard_sentinel` (no-op on Airflow 2.9.1).
     _clear_safeguard_sentinel(op_b)
 
 
 def test_clear_safeguard_sentinel_is_noop_without_thread_local(monkeypatch):
-    # Simulates Airflow 2.9.1, where ExecutorSafeguard has no `_sentinel` attribute
-    # (no thread-local bookkeeping, hence no leak). The guarded cleanup must be a
-    # no-op, not an AttributeError that would break the 2.9.1 CI matrix.
+    # Asserts the guarded cleanup is a no-op (not an AttributeError) when
+    # `_sentinel` is absent — the Airflow 2.9.1 shape; see `_clear_safeguard_sentinel`.
     monkeypatch.delattr(ExecutorSafeguard, "_sentinel", raising=False)
     _clear_safeguard_sentinel(_make_op({}))  # must not raise
 
