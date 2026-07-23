@@ -181,6 +181,18 @@ def _run(op, hook, context: dict | None = None):
     return op.execute(context or _context())
 
 
+def _clear_safeguard_sentinel(op):
+    # ExecutorSafeguard keeps thread-local `callers` bookkeeping only on Airflow
+    # 2.10+ (2.11 here); on the target 2.9.1 it has no `_sentinel` attribute and
+    # stores nothing, so there is no leak to clear. Clear only where the mechanism
+    # exists — a bare `ExecutorSafeguard._sentinel` access would AttributeError on
+    # 2.9.1 and break the CI matrix. On 2.11 a later bare S3 execute() would
+    # otherwise consume this leftover sentinel and be wrongly silenced.
+    callers = getattr(getattr(ExecutorSafeguard, "_sentinel", None), "callers", None)
+    if callers is not None:
+        callers.pop(f"{type(op).__name__}__sentinel", None)
+
+
 # -- template_fields / basic config ------------------------------------------
 
 
@@ -282,11 +294,17 @@ def test_execute_logs_no_warning_when_invoked_with_sentinel(caplog):
     with caplog.at_level(logging.WARNING):
         op_b.execute(ctx, **sentinel_kw)
     assert "cannot be called outside TaskInstance!" not in caplog.text
-    # ExecutorSafeguard stored our sentinel keyed by the runtime class and never
-    # popped it (only the no-sentinel path pops). On Airflow 2.11 the S3 operator
-    # has its own `execute`, so a later bare S3 execute() would consume this
-    # leftover and be wrongly silenced. Clear it to keep tests isolated.
-    ExecutorSafeguard._sentinel.callers.pop(f"{type(op_b).__name__}__sentinel", None)
+    # Clear the leftover sentinel (see `_clear_safeguard_sentinel`) to keep tests
+    # isolated; guarded so it's a no-op on Airflow 2.9.1 (no thread-local mechanism).
+    _clear_safeguard_sentinel(op_b)
+
+
+def test_clear_safeguard_sentinel_is_noop_without_thread_local(monkeypatch):
+    # Simulates Airflow 2.9.1, where ExecutorSafeguard has no `_sentinel` attribute
+    # (no thread-local bookkeeping, hence no leak). The guarded cleanup must be a
+    # no-op, not an AttributeError that would break the 2.9.1 CI matrix.
+    monkeypatch.delattr(ExecutorSafeguard, "_sentinel", raising=False)
+    _clear_safeguard_sentinel(_make_op({}))  # must not raise
 
 
 # -- XCom URI vs manifest key divergence (ADR-0007) --------------------------

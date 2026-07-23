@@ -125,16 +125,16 @@ def _clear_safeguard_sentinel(op):
 **Files:**
 - Modify: `tests/test_operator_s3.py`
 
-- [ ] Добавить module-level хелпер `_clear_safeguard_sentinel(op)` с getattr-guard
+- [x] Добавить module-level хелпер `_clear_safeguard_sentinel(op)` с getattr-guard
       (см. Technical Details); заменить инлайновую чистку (строки 285-289) на вызов
       `_clear_safeguard_sentinel(op_b)`
-- [ ] Убедиться, что импорты `_sentinel` (стр. 20) и `ExecutorSafeguard` (стр. 21)
+- [x] Убедиться, что импорты `_sentinel` (стр. 20) и `ExecutorSafeguard` (стр. 21)
       остаются (хелпер использует `ExecutorSafeguard`); production-код не тронут
-- [ ] Добавить **обязательный** микротест
+- [x] Добавить **обязательный** микротест
       `test_clear_safeguard_sentinel_is_noop_without_thread_local(monkeypatch)`:
       `monkeypatch.delattr(ExecutorSafeguard, "_sentinel", raising=False)`, затем
       `_clear_safeguard_sentinel(_make_op({}))` — не должно бросать (имитация 2.9.1)
-- [ ] Запустить `.venv/bin/python -m pytest tests/test_operator_s3.py` — зелёный
+- [x] Запустить `.venv/bin/python -m pytest tests/test_operator_s3.py` — зелёный
       (на 2.11 guard истинен → чистка выполняется, поведение теста прежнее; микротест
       проходит)
 
