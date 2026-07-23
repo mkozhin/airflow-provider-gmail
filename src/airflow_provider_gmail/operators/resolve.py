@@ -62,6 +62,13 @@ class GmailResolveAttachmentsOperator(BaseOperator):
         self.aws_conn_id = aws_conn_id
 
     def execute(self, context: Any) -> list[str]:
-        return resolve_attachments(
+        result = resolve_attachments(
             self.manifests, pick=self.pick, aws_conn_id=self.aws_conn_id
         )
+        self.log.info(
+            "Resolved %d manifest(s) (pick=%s) → %d attachment(s).",
+            len(self.manifests), self.pick, len(result),
+        )
+        for path in result:
+            self.log.info("  %r", path)  # %r — path is untrusted (foreign manifest)
+        return result

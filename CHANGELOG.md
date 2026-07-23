@@ -16,6 +16,12 @@
   (`from`) is deliberately **not** logged, to keep sensitive mail metadata out of
   Airflow logs. Logging only; XCom, manifests, dedup, and action order are
   unchanged.
+- **`GmailResolveAttachmentsOperator` now logs at `INFO` what it resolved.** The
+  operator previously stayed silent; it now emits one summary line — the input
+  manifest count, the `pick` mode, and the resolved attachment count — followed
+  by one line per resolved attachment path (the full `s3://…` URIs or absolute
+  paths pushed to XCom). Logging only; the returned list, XCom, and error
+  propagation are unchanged.
 
 ### Fixed
 
