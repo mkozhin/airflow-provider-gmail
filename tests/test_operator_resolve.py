@@ -241,3 +241,7 @@ def test_manifest_error_propagates(fake_s3, caplog):
         with pytest.raises(ManifestError):
             op.execute(context={})
     assert _op_messages(op, caplog) == []
+    # Belt-and-suspenders: no summary line at ANY level (locks "nothing logged
+    # on error" independently of the INFO scope; the ExecutorSafeguard WARNING's
+    # message differs, so it never trips this).
+    assert not [r for r in caplog.records if r.getMessage().startswith("Resolved ")]
