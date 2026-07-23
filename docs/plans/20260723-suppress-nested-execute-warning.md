@@ -246,17 +246,17 @@ retries).
 **Files:**
 - Modify: `CHANGELOG.md`
 
-- [ ] `[0.3.0]` уже зафиксирован (`b5f07e2`, дата `2026-07-22`) — **не трогать
+- [x] `[0.3.0]` уже зафиксирован (`b5f07e2`, дата `2026-07-22`) — **не трогать
       его**. Добавить **новый верхний** раздел `## [Unreleased]` с `### Fixed`
       (именно `[Unreleased]`, не `[0.3.1]` — версию задаёт git-тег, не changelog)
-- [ ] текст записи (English, Keep-a-Changelog): устранён ложный WARNING
+- [x] текст записи (English, Keep-a-Changelog): устранён ложный WARNING
       `GmailAttachmentsToS3Operator.execute cannot be called outside TaskInstance!`
       на каждом запуске; валидация `prefix` перенесена из `execute()` в
       `pre_execute()`, штатное поведение оператора не изменилось (Airflow 2.9+/
       `ExecutorSafeguard`). Явно указать смену места валидации `execute()` →
       `pre_execute()` (блок 0.3.0 «ValueError at the top of `execute()`» оставляем
       как есть, новая запись уточняет)
-- [ ] (документация только-changelog — отдельных тестов не требует)
+- [x] (документация только-changelog — отдельных тестов не требует)
 
 ### Task 3: Verify acceptance criteria
 - [ ] проверить, что реализованы все требования из Overview (WARNING устранён,

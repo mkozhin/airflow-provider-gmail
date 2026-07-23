@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **No more spurious `execute cannot be called outside TaskInstance!` warning
+  on every S3 download run.** Each run of `GmailAttachmentsToS3Operator` logged
+  `GmailAttachmentsToS3Operator.execute cannot be called outside TaskInstance!`
+  at `WARNING` — cosmetic noise, as the task ran normally (manifests, XCom, and
+  downstream were all correct). The operator overrode `execute()` only to
+  validate the rendered `prefix` and then called `super().execute(context)`;
+  under Airflow 2.9+ every operator's `execute` is wrapped by `ExecutorSafeguard`,
+  and that nested `super().execute()` call carries no sentinel, so the safeguard
+  logged the false warning. The rendered-`prefix` validation moved from
+  `execute()` to `pre_execute()` — which `ExecutorSafeguard` does not wrap and
+  which `TaskInstance` calls after template rendering — so the nested
+  `super().execute()` is gone and the warning no longer appears. The operator's
+  normal (`TaskInstance`) behavior is unchanged: `execute()`'s signature and
+  return value, `prefix` fail-fast validation, XCom, manifests, and dedup all
+  stay as before (the 0.3.0 note about the `ValueError` "at the top of
+  `execute()`" now takes effect in `pre_execute()`).
+
 ## [0.3.0] - 2026-07-22
 
 ### Changed
