@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 import os
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
@@ -282,6 +283,23 @@ def test_rerun_redownloads_and_overwrites_existing_file(tmp_path):
     with open(attachment, "rb") as fh:
         assert fh.read() == b"bytes-of-a.xlsx"
     assert result == [os.path.join(_msg_dir(tmp_path, msg), "_manifest.json")]
+
+
+def test_download_line_destination_is_absolute_manifest_path(tmp_path, caplog):
+    msg = _message("msg1", "a.xlsx")
+    op = _make_op(tmp_path)
+    hook = FakeGmailHook([msg])
+    with caplog.at_level(logging.INFO):
+        _run(op, hook)
+
+    records = [
+        r for r in caplog.records if r.getMessage().startswith("Downloaded message")
+    ]
+    assert len(records) == 1
+    manifest = os.path.join(_msg_dir(tmp_path, msg), "_manifest.json")
+    assert os.path.isabs(manifest)
+    # Destination == the absolute _manifest.json path (== XCom for local).
+    assert manifest in records[0].getMessage()
 
 
 def test_path_traversal_attachment_written_inside_path(tmp_path):

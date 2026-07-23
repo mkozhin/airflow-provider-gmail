@@ -601,6 +601,27 @@ def test_corrupt_manifest_overwrite_false_raises_manifest_error():
         _run(op, hook)
 
 
+# -- INFO result logging: destination is the manifest URI --------------------
+
+
+def test_download_line_destination_is_manifest_uri(caplog):
+    store: dict = {}
+    msg = _message("msg1", "a.xlsx")
+    op = _make_op(store)
+    hook = FakeGmailHook([msg])
+    with caplog.at_level(logging.INFO):
+        _run(op, hook)
+
+    records = [
+        r for r in caplog.records if r.getMessage().startswith("Downloaded message")
+    ]
+    assert len(records) == 1
+    line = records[0].getMessage()
+    # Destination == the s3://…/_manifest.json URI that also lands in XCom.
+    assert _manifest_uri(msg) in line
+    assert _manifest_uri(msg).endswith("/_manifest.json")
+
+
 def test_non_utf8_manifest_raises_manifest_error():
     # A non-UTF-8 body makes read_key's .decode("utf-8") raise UnicodeDecodeError
     # after check_for_key; Manifest.from_s3 wraps it into ManifestError instead of

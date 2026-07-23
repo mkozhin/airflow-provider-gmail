@@ -67,6 +67,16 @@ __all__ = [
 ]
 
 
+def _one_line(value: str | None) -> str:
+    """Collapse any whitespace run (incl. ``\\n``/``\\t``/control spaces) to single spaces.
+
+    Used to keep a log line on one physical line: subjects and (untrusted)
+    attachment filenames may carry newlines or control characters. No length
+    truncation (YAGNI). An empty/``None`` value yields an empty string.
+    """
+    return " ".join((value or "").split())
+
+
 def resolve_collisions(
     attachments: Iterable[Attachment],
 ) -> list[tuple[Attachment, str]]:
@@ -375,6 +385,10 @@ class GmailAttachmentsBaseOperator(BaseOperator):
 
         delivered: list[str] = []
         to_label: list[str] = []
+        downloaded_files = 0
+        downloaded_msgs = 0
+        redelivered = 0
+        past_run_skipped = 0
         for msg in self.hook.find_messages_with_attachments(
             query, self._compiled_pattern, exclude_label_id
         ):
@@ -402,9 +416,21 @@ class GmailAttachmentsBaseOperator(BaseOperator):
                 # Manifest of THIS run (a failed attempt): files are on storage
                 # but never reached downstream → deliver the path, do not download.
                 delivered.append(manifest_xcom_path)
+                redelivered += 1
+                # Symmetric with the DOWNLOAD_AND_DELIVER line: report what is being
+                # re-delivered (subject + files) from the current-run manifest.
+                self.log.info(
+                    "Re-delivered message %s %r: %d file(s) [%s] (no re-download) → %s",
+                    msg.message_id,
+                    _one_line(manifest.subject) or "(no subject)",
+                    len(manifest.files),
+                    ", ".join(_one_line(f.name) for f in manifest.files),
+                    manifest_xcom_path,
+                )
                 continue
             if decision is Decision.SKIP:
                 # Manifest of a PAST run: already went through layer 2 → drop.
+                past_run_skipped += 1
                 self.log.info(
                     "Message %s was processed by an earlier run, skipping.",
                     msg.message_id,
@@ -437,9 +463,32 @@ class GmailAttachmentsBaseOperator(BaseOperator):
                 run_id,
             )
             delivered.append(manifest_xcom_path)
+            downloaded_msgs += 1
+            downloaded_files += len(files)
+            # Strictly AFTER _write_manifest: a failed write (raising above) must
+            # NOT emit a false "Downloaded" line. ``from`` is deliberately not
+            # logged (less sensitive mail metadata in Airflow logs).
+            self.log.info(
+                "Downloaded message %s %r: %d file(s) [%s] → %s",
+                msg.message_id,
+                _one_line(msg.subject) or "(no subject)",
+                len(files),
+                ", ".join(_one_line(f.name) for f in files),
+                manifest_xcom_path,
+            )
 
         if self.mark_processed and to_label:
             self.hook.mark_processed(to_label, label_name)
+
+        # Always printed (including the skip path): a final summary of the run.
+        self.log.info(
+            "Gmail attachments: downloaded %d file(s) from %d message(s), "
+            "re-delivered %d, past-run skipped %d.",
+            downloaded_files,
+            downloaded_msgs,
+            redelivered,
+            past_run_skipped,
+        )
 
         if not delivered:
             raise AirflowSkipException("no new messages")

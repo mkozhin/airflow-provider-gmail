@@ -19,7 +19,7 @@ import pytest
 from airflow.exceptions import AirflowSkipException
 
 from airflow_provider_gmail.hooks.gmail import MessageWithAttachments
-from airflow_provider_gmail.manifest import Manifest
+from airflow_provider_gmail.manifest import FileEntry, Manifest
 from airflow_provider_gmail.operators.gmail import (
     GmailAttachmentsBaseOperator,
     GmailAttachmentsToS3Operator,
@@ -802,3 +802,164 @@ def test_execute_manifest_key_matches_sensor_manifest_key():
     assert operator_key == sensor_key
     # And the rel_dir is byte-identical to the historical literal layout.
     assert rel_dir == f"dt={dt}/{msg.message_id}"
+
+
+# ===========================================================================
+# INFO result logging in _run (what/how many/where)
+# ===========================================================================
+
+
+def _seed_manifest_with_files(store, msg, run_id, files):
+    """Pre-write a manifest for ``msg`` carrying real ``FileEntry`` items."""
+    manifest = Manifest.build(
+        "avito",
+        msg.message_id,
+        to_local_iso(msg.internal_date, MSK),
+        msg.subject,
+        msg.from_,
+        files,
+        run_id,
+    )
+    store[f"{_rel_dir(msg)}/_manifest.json"] = manifest.to_json()
+
+
+def _download_records(caplog):
+    return [r for r in caplog.records if r.getMessage().startswith("Downloaded message")]
+
+
+def _redeliver_records(caplog):
+    return [r for r in caplog.records if r.getMessage().startswith("Re-delivered message")]
+
+
+def _summary_messages(caplog):
+    return [r.getMessage() for r in caplog.records if r.getMessage().startswith("Gmail attachments:")]
+
+
+def test_download_line_and_summary(caplog):
+    op = _DictOperator(task_id="t", source="avito")
+    hook = _FakeHook([_message("msg1", "a.xlsx", "b.xlsx")])
+    with caplog.at_level(logging.INFO):
+        _run(op, hook)
+
+    records = _download_records(caplog)
+    assert len(records) == 1
+    line = records[0].getMessage()
+    assert "msg1" in line
+    assert "'Отчёт'" in line  # subject rendered via %r (quotes, keeps Cyrillic)
+    assert "a.xlsx" in line and "b.xlsx" in line
+    # Destination is the real manifest path (== XCom), not a directory prefix.
+    assert "s3://bucket/dt=2026-07-12/msg1/_manifest.json" in line
+    assert _summary_messages(caplog) == [
+        "Gmail attachments: downloaded 2 file(s) from 1 message(s), "
+        "re-delivered 0, past-run skipped 0."
+    ]
+
+
+def test_download_line_omits_from(caplog):
+    op = _DictOperator(task_id="t", source="avito")
+    hook = _FakeHook([_message("msg1", "a.xlsx")])
+    with caplog.at_level(logging.INFO):
+        _run(op, hook)
+
+    records = _download_records(caplog)
+    assert len(records) == 1
+    # The from_ value must never appear in the per-message line (deliberate).
+    assert "reports@avito.ru" not in records[0].getMessage()
+
+
+def test_deliver_only_line_has_subject_and_files(caplog):
+    store: dict = {}
+    msg = _message("msg1", "a.xlsx")
+    files = [
+        FileEntry(name="report.xlsx", size=3, path="dt=2026-07-12/msg1/report.xlsx"),
+        FileEntry(name="data.csv", size=5, path="dt=2026-07-12/msg1/data.csv"),
+    ]
+    _seed_manifest_with_files(store, msg, CURRENT_RUN, files)
+    op = _DictOperator(task_id="t", source="avito", store=store)
+    hook = _FakeHook([msg])
+    with caplog.at_level(logging.INFO):
+        result = _run(op, hook)
+
+    assert hook.downloaded == []  # DELIVER_ONLY → no re-download
+    records = _redeliver_records(caplog)
+    assert len(records) == 1
+    line = records[0].getMessage()
+    assert "msg1" in line
+    assert "'Отчёт'" in line
+    assert "report.xlsx" in line and "data.csv" in line
+    assert "s3://bucket/dt=2026-07-12/msg1/_manifest.json" in line
+    assert result == ["s3://bucket/dt=2026-07-12/msg1/_manifest.json"]
+    assert "re-delivered 1" in _summary_messages(caplog)[0]
+
+
+def test_skip_only_run_logs_summary_with_past_run_skipped(caplog):
+    store: dict = {}
+    msg = _message("msg1", "a.xlsx")
+    _seed_manifest(store, msg, PAST_RUN)
+    op = _DictOperator(task_id="t", source="avito", store=store)
+    hook = _FakeHook([msg])
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(AirflowSkipException):
+            _run(op, hook)
+
+    # The summary prints even on the all-skip path (not silence).
+    assert _summary_messages(caplog) == [
+        "Gmail attachments: downloaded 0 file(s) from 0 message(s), "
+        "re-delivered 0, past-run skipped 1."
+    ]
+
+
+def test_download_line_empty_subject_shows_placeholder(caplog):
+    msg = _message("msg1", "a.xlsx")
+    msg.subject = ""  # fixtures hardcode "Отчёт"; force an empty subject
+    op = _DictOperator(task_id="t", source="avito")
+    hook = _FakeHook([msg])
+    with caplog.at_level(logging.INFO):
+        _run(op, hook)
+
+    assert "(no subject)" in _download_records(caplog)[0].getMessage()
+
+
+def test_download_line_collapses_newline_in_subject(caplog):
+    msg = _message("msg1", "a.xlsx")
+    msg.subject = "line1\nline2"
+    op = _DictOperator(task_id="t", source="avito")
+    hook = _FakeHook([msg])
+    with caplog.at_level(logging.INFO):
+        _run(op, hook)
+
+    records = _download_records(caplog)
+    assert len(records) == 1
+    rendered = records[0].getMessage()  # the SPECIFIC record, not caplog.text
+    assert "\n" not in rendered
+    assert "line1 line2" in rendered
+
+
+def test_download_line_collapses_newline_in_filename(caplog):
+    # An untrusted attachment name carrying a newline is collapsed too.
+    msg = _message("msg1", "re\nport.xlsx")
+    op = _DictOperator(task_id="t", source="avito")
+    hook = _FakeHook([msg])
+    with caplog.at_level(logging.INFO):
+        _run(op, hook)
+
+    records = _download_records(caplog)
+    assert len(records) == 1
+    rendered = records[0].getMessage()
+    assert "\n" not in rendered
+    assert "re port.xlsx" in rendered
+
+
+def test_write_failure_emits_no_download_line_and_no_summary(caplog):
+    # A manifest-write failure must raise BEFORE the per-message "Downloaded"
+    # line, and the summary must not be emitted (exception propagates first).
+    op = _DictOperator(
+        task_id="t", source="avito", fail_write_containing="_manifest"
+    )
+    hook = _FakeHook([_message("msg1", "a.xlsx")])
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(RuntimeError):
+            _run(op, hook)
+
+    assert _download_records(caplog) == []
+    assert _summary_messages(caplog) == []

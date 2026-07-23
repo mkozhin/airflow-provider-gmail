@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- **The download operators now log at `INFO` what was downloaded/re-delivered and
+  where.** On a normal successful run `GmailAttachmentsToS3Operator` and
+  `GmailAttachmentsToLocalOperator` previously stayed silent about delivery; now
+  each processed message emits one `INFO` line — `message_id`, subject, the
+  attachment file names, and the destination manifest path (the same
+  `s3://…/_manifest.json` URI or absolute path that lands in XCom) — for both
+  freshly downloaded messages and messages re-delivered from a current-run
+  manifest without re-download. A final summary line reports the totals
+  (files/messages downloaded, re-delivered, past-run skipped). The sender
+  (`from`) is deliberately **not** logged, to keep sensitive mail metadata out of
+  Airflow logs. Logging only; XCom, manifests, dedup, and action order are
+  unchanged.
+
 ### Fixed
 
 - **No more spurious `execute cannot be called outside TaskInstance!` warning
