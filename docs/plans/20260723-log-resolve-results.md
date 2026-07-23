@@ -164,9 +164,9 @@ downstream и получит). Поведение оператора не мен
 - [x] **Gate:** и полный `pytest`, и покрытие ≥99% должны пройти **до** Task 3
 
 ### Task 3: [Final] Закрыть план
-- [ ] Переместить план в `docs/plans/completed/` (харнесс при exec; иначе —
-      закрывающим коммитом)
-- [ ] README/README_RU и AGENTS.md/CLAUDE.md — обновлять **не требуется**
+- [x] Переместить план в `docs/plans/completed/` (перемещает харнесс на шаге
+      завершения exec)
+- [x] README/README_RU и AGENTS.md/CLAUDE.md — обновлять **не требуется**
       (наблюдаемость логов, не публичный API/поведение)
 
 ## Post-Completion
