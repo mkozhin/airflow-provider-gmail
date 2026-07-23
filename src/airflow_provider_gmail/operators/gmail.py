@@ -306,6 +306,19 @@ class GmailAttachmentsBaseOperator(BaseOperator):
     # -- Orchestration -------------------------------------------------------
 
     def execute(self, context: Any) -> list[str]:
+        """Thin delegate to :meth:`_run`.
+
+        Kept a one-liner so a storage subclass can validate its rendered config
+        *before the same orchestration* by overriding ``execute`` and calling
+        :meth:`_run` — NOT ``super().execute()``. A nested ``super().execute()``
+        carries no ``ExecutorSafeguard`` sentinel and logs a spurious
+        "... .execute cannot be called outside TaskInstance!" warning (Airflow
+        2.9+). ``_run`` is not wrapped by the safeguard, so the inner call is
+        silent.
+        """
+        return self._run(context)
+
+    def _run(self, context: Any) -> list[str]:
         """Find, download and deliver the matching messages (see the plan pseudocode).
 
         The reference day and ``run_id`` come from ``context`` — never
@@ -490,22 +503,20 @@ class GmailAttachmentsToS3Operator(GmailAttachmentsBaseOperator):
         self.aws_conn_id = aws_conn_id
         self._cached_s3_hook = None
 
-    def pre_execute(self, context: Any) -> None:
-        """Validate the rendered ``prefix`` before the base orchestration runs.
+    def execute(self, context: Any) -> list[str]:
+        """Validate the rendered ``prefix``, then run the base orchestration.
 
         ``prefix`` is a template field, so it is validated on its **rendered**
         value (parity with ``date_from``/``date_to``, ADR-0004) — not in
         ``__init__`` where a ``{{ ds }}`` template would trip the ``{``/``}``
-        check. ``TaskInstance`` calls ``pre_execute`` after template rendering and
-        before ``execute``, so the rendered ``prefix`` is available and validation
-        still fails fast (ValueError) with a clear message, keeping produced object
-        keys URL-safe by construction (ADR-0007). Validation lives here — not in an
-        overriding ``execute`` calling ``super().execute()`` — because that nested
-        call trips ``ExecutorSafeguard`` and logs a spurious
-        "... .execute cannot be called outside TaskInstance!" warning.
+        check. Validating at ``execute`` time — after ``pre_execute`` and
+        ``on_execute_callback`` — means a late mutation of ``prefix`` is still
+        caught, so produced object keys stay URL-safe by construction (ADR-0007).
+        Calls :meth:`_run` (not ``super().execute()``), so the nested call does
+        not trip ``ExecutorSafeguard`` (Airflow 2.9+) with a spurious warning.
         """
-        super().pre_execute(context)
         validate_prefix(self.prefix)
+        return self._run(context)
 
     def _s3_hook(self):
         """The cached :class:`S3Hook`, importing the Amazon provider lazily.

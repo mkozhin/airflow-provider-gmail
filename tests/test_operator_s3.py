@@ -177,11 +177,7 @@ def _context(run_id: str = CURRENT_RUN) -> dict:
 
 def _run(op, hook, context: dict | None = None):
     op.hook = hook
-    ctx = context or _context()
-    # Mirror the TaskInstance lifecycle order (pre_execute → execute) so the
-    # rendered-prefix validation (now in pre_execute) runs for direct-call tests.
-    op.pre_execute(ctx)
-    return op.execute(ctx)
+    return op.execute(context or _context())
 
 
 # -- template_fields / basic config ------------------------------------------
@@ -221,21 +217,21 @@ def test_s3_hook_lazily_constructs_real_hook_with_aws_conn_id():
 
 def test_templated_prefix_does_not_fail_at_construction():
     # A Jinja prefix contains { } (both forbidden in a key), so validation must
-    # NOT run in __init__ — only on the rendered value in pre_execute().
+    # NOT run in __init__ — only on the rendered value in execute().
     op = GmailAttachmentsToS3Operator(
         task_id="t", source="avito", bucket=BUCKET, prefix="{{ ds }}"
     )
     assert op.prefix == "{{ ds }}"
 
 
-def test_pre_execute_invalid_rendered_prefix_raises():
+def test_execute_invalid_rendered_prefix_raises():
     op = _make_op({}, prefix="gmail/a#b")
     hook = FakeGmailHook([_message("msg1", "a.xlsx")])
     with pytest.raises(ValueError, match="prefix"):
         _run(op, hook)
 
 
-def test_pre_execute_valid_prefix_passes():
+def test_execute_valid_prefix_passes():
     store: dict = {}
     msg = _message("msg1", "a.xlsx")
     op = _make_op(store, prefix="gmail/avito")
@@ -244,18 +240,16 @@ def test_pre_execute_valid_prefix_passes():
     assert result == [_manifest_uri(msg)]
 
 
-def test_user_pre_execute_hook_runs_before_prefix_validation():
-    # The override's super().pre_execute() must still invoke a user-supplied
-    # pre_execute= hook, and it must run BEFORE validate_prefix: a spy hook fires
-    # even though a hostile prefix makes validation raise right after.
-    calls: list[str] = []
-    op = _make_op(
-        {}, prefix="gmail/a#b", pre_execute=lambda context: calls.append("hook")
-    )
+def test_execute_revalidates_prefix_mutated_after_pre_execute():
+    # Regression: validation runs at execute time, AFTER pre_execute and
+    # on_execute_callback, so a prefix mutated late (as an on_execute_callback
+    # would) is still caught — keys stay URL-safe by construction (ADR-0007).
+    op = _make_op({}, prefix="gmail/avito")
     op.hook = FakeGmailHook([_message("msg1", "a.xlsx")])
+    op.pre_execute(_context())  # BaseOperator no-op; prefix still valid here
+    op.prefix = "gmail/a#b"  # mutated after pre_execute (like on_execute_callback)
     with pytest.raises(ValueError, match="prefix"):
-        op.pre_execute(_context())
-    assert calls == ["hook"]  # hook ran (via super) before the ValueError
+        op.execute(_context())
 
 
 # -- ExecutorSafeguard: no spurious WARNING when called like TaskInstance -----
@@ -276,7 +270,6 @@ def test_execute_logs_no_warning_when_invoked_with_sentinel(caplog):
     op_a = _make_op({})
     op_a.hook = FakeGmailHook([msg])
     with caplog.at_level(logging.WARNING):
-        op_a.pre_execute(ctx)
         op_a.execute(ctx)
     assert "cannot be called outside TaskInstance!" in caplog.text
     caplog.clear()  # MANDATORY: caplog.records accumulate across branches
@@ -286,7 +279,6 @@ def test_execute_logs_no_warning_when_invoked_with_sentinel(caplog):
     op_b.hook = FakeGmailHook([msg])
     sentinel_kw = {f"{type(op_b).__name__}__sentinel": _sentinel}
     with caplog.at_level(logging.WARNING):
-        op_b.pre_execute(ctx)
         op_b.execute(ctx, **sentinel_kw)
     assert "cannot be called outside TaskInstance!" not in caplog.text
 

@@ -197,42 +197,42 @@ callback, ставящий `prefix = "gmail/a#b"` после `pre_execute`, да
 - Modify: `CHANGELOG.md`
 
 Реализация:
-- [ ] В `GmailAttachmentsBaseOperator`: переименовать тело текущего `execute`
+- [x] В `GmailAttachmentsBaseOperator`: переименовать тело текущего `execute`
       (стр. 308) в `def _run(self, context)` (docstring + тело дословно); добавить
       тонкий `def execute(self, context) -> list[str]: return self._run(context)` с
       docstring-делегатом (см. Technical Details)
-- [ ] В `GmailAttachmentsToS3Operator`: заменить `pre_execute` (493–508) на override
+- [x] В `GmailAttachmentsToS3Operator`: заменить `pre_execute` (493–508) на override
       `execute`: `validate_prefix(self.prefix)` затем `return self._run(context)`
       (docstring по Technical Details)
-- [ ] Проверить, что `validate_prefix` остаётся импортированным/используемым;
+- [x] Проверить, что `validate_prefix` остаётся импортированным/используемым;
       `GmailAttachmentsToLocalOperator` по-прежнему наследует тонкий базовый
       `execute` (правок там не нужно)
-- [ ] `utils/paths.py:70` — вернуть docstring `validate_prefix` к «at the top of
+- [x] `utils/paths.py:70` — вернуть docstring `validate_prefix` к «at the top of
       `execute()` / `poke()`»
-- [ ] `sensors/gmail.py:360` — вернуть строку паритета `poke` к «parity with the S3
+- [x] `sensors/gmail.py:360` — вернуть строку паритета `poke` к «parity with the S3
       operator's `execute()`»
 
 Тесты (в этой же задаче):
-- [ ] Вернуть тестовый хелпер `_run` (сейчас `pre_execute` → `execute`) к
+- [x] Вернуть тестовый хелпер `_run` (сейчас `pre_execute` → `execute`) к
       `return op.execute(context or _context())`, и **убрать его устаревший
       комментарий** про «Mirror the TaskInstance lifecycle order
       (pre_execute → execute)…» (tests/test_operator_s3.py:181-182)
-- [ ] Переименовать `test_pre_execute_invalid_rendered_prefix_raises` /
+- [x] Переименовать `test_pre_execute_invalid_rendered_prefix_raises` /
       `test_pre_execute_valid_prefix_passes` →
       `test_execute_invalid_rendered_prefix_raises` /
       `test_execute_valid_prefix_passes`; вернуть комментарий в
       `test_templated_prefix_does_not_fail_at_construction` на `execute()`
-- [ ] Удалить `test_user_pre_execute_hook_runs_before_prefix_validation` (проверял
+- [x] Удалить `test_user_pre_execute_hook_runs_before_prefix_validation` (проверял
       свойство только варианта A; реального поведения больше не описывает)
-- [ ] Обновить `test_execute_logs_no_warning_when_invoked_with_sentinel`: убрать
+- [x] Обновить `test_execute_logs_no_warning_when_invoked_with_sentinel`: убрать
       вызовы `op.pre_execute(...)` (S3 больше не переопределяет `pre_execute`);
       сохранить negative-control + `caplog.clear()` + sentinel-ветку
-- [ ] **Добавить регресс-тест** `test_execute_revalidates_prefix_mutated_after_pre_execute`:
+- [x] **Добавить регресс-тест** `test_execute_revalidates_prefix_mutated_after_pre_execute`:
       op с валидным `prefix` + `op.hook = FakeGmailHook([...])`, затем
       `op.pre_execute(ctx)` (no-op из BaseOperator), затем `op.prefix = "gmail/a#b"`,
       ассертить `op.execute(...)` → `ValueError(match="prefix")` (закрывает находку
       codex — имитирует мутацию из `on_execute_callback` после `pre_execute`)
-- [ ] CHANGELOG (`[Unreleased] / ### Fixed`, стр. 3–24): переписать запись —
+- [x] CHANGELOG (`[Unreleased] / ### Fixed`, стр. 3–24): переписать запись —
       ложный WARNING `execute cannot be called outside TaskInstance!` убран
       вынесением базовой оркестрации в protected `_run`, который S3-оператор зовёт
       напрямую (вместо `super().execute()`); валидация `prefix` **остаётся на
@@ -240,7 +240,7 @@ callback, ставящий `prefix = "gmail/a#b"` после `pre_execute`, да
       URL-safe-ключей ADR-0007 не изменилась относительно поведения `0.3.0`. НЕ
       ссылаться на перенос в `pre_execute()` (тот промежуточный подход отменён).
       Блок `[0.3.0]` не трогать; English / Keep-a-Changelog
-- [ ] Запустить `.venv/bin/python -m pytest tests/test_operator_s3.py
+- [x] Запустить `.venv/bin/python -m pytest tests/test_operator_s3.py
       tests/test_operator_base.py tests/test_operator_local.py` — должно быть
       зелёным перед Task 2 (base/local прогоняют перенесённое тело оркестрации через
       унаследованный тонкий `execute` → `_run`, поэтому должны остаться зелёными;

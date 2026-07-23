@@ -12,14 +12,15 @@
   validate the rendered `prefix` and then called `super().execute(context)`;
   under Airflow 2.9+ every operator's `execute` is wrapped by `ExecutorSafeguard`,
   and that nested `super().execute()` call carries no sentinel, so the safeguard
-  logged the false warning. The rendered-`prefix` validation moved from
-  `execute()` to `pre_execute()` — which `ExecutorSafeguard` does not wrap and
-  which `TaskInstance` calls after template rendering — so the nested
-  `super().execute()` is gone and the warning no longer appears. The operator's
-  normal (`TaskInstance`) behavior is unchanged: `execute()`'s signature and
-  return value, `prefix` fail-fast validation, XCom, manifests, and dedup all
-  stay as before (the 0.3.0 note about the `ValueError` "at the top of
-  `execute()`" now takes effect in `pre_execute()`).
+  logged the false warning. The base orchestration moved into a protected
+  `_run()` method, which the S3 operator's `execute()` override now calls
+  directly (instead of `super().execute()`); `ExecutorSafeguard` wraps only
+  methods named `execute`, so the inner `_run()` call is silent and the warning
+  no longer appears. The rendered-`prefix` validation stays **at `execute` time**
+  (after `on_execute_callback`), so the URL-safe-keys guarantee (ADR-0007) is
+  unchanged from 0.3.0 behavior. The operator's normal (`TaskInstance`) behavior
+  is otherwise unchanged: `execute()`'s signature and return value, `prefix`
+  fail-fast validation, XCom, manifests, and dedup all stay as before.
 
 ## [0.3.0] - 2026-07-22
 

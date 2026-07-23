@@ -357,7 +357,7 @@ class GmailAttachmentToS3Sensor(GmailAttachmentSensor):
         silently treated as processed.
 
         The rendered ``prefix`` is validated first (parity with the S3 operator's
-        ``pre_execute()``, ADR-0007): the sensor emits no URI and its keys do not
+        ``execute()``, ADR-0007): the sensor emits no URI and its keys do not
         break on a hostile ``prefix``, but rejecting bad config early keeps
         operator and sensor uniform so a future review need not remove it.
         """
