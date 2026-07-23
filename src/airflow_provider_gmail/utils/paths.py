@@ -67,9 +67,8 @@ def validate_prefix(prefix: str) -> None:
     (``0x80–0x9F``) are intentionally **not** rejected — consistent with
     ``sanitize_filename``'s ``_CONTROL_CHARS`` (also capped at ``127``).
 
-    Called on the **rendered** value — at the top of ``execute()`` / ``poke()`` —
-    not in ``__init__`` — because
-    ``prefix`` is a template field: a Jinja expression
+    Called on the **rendered** value at the top of ``execute()``/``poke()`` — not
+    in ``__init__`` — because ``prefix`` is a template field: a Jinja expression
     such as ``{{ ds }}`` itself contains ``{``/``}`` (both forbidden), so an
     ``__init__`` check would reject valid templates. ``/`` is allowed (a prefix is
     a path). Raises :class:`ValueError` naming the offending characters (via
