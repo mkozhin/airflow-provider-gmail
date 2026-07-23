@@ -809,7 +809,12 @@ def test_execute_manifest_key_matches_sensor_manifest_key():
 # ===========================================================================
 
 
-def _seed_manifest_with_files(store, msg, run_id, files):
+def _seed_manifest_with_files(
+    store: dict,
+    msg: MessageWithAttachments,
+    run_id: str,
+    files: list[FileEntry],
+) -> None:
     """Pre-write a manifest for ``msg`` carrying real ``FileEntry`` items."""
     manifest = Manifest.build(
         "avito",
@@ -823,15 +828,15 @@ def _seed_manifest_with_files(store, msg, run_id, files):
     store[f"{_rel_dir(msg)}/_manifest.json"] = manifest.to_json()
 
 
-def _download_records(caplog):
+def _download_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
     return [r for r in caplog.records if r.getMessage().startswith("Downloaded message")]
 
 
-def _redeliver_records(caplog):
+def _redeliver_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
     return [r for r in caplog.records if r.getMessage().startswith("Re-delivered message")]
 
 
-def _summary_messages(caplog):
+def _summary_messages(caplog: pytest.LogCaptureFixture) -> list[str]:
     return [r.getMessage() for r in caplog.records if r.getMessage().startswith("Gmail attachments:")]
 
 
