@@ -26,7 +26,7 @@ from airflow_provider_gmail.operators.resolve import GmailResolveAttachmentsOper
 BUCKET = "reports-bucket"
 
 
-def _op_messages(op, caplog) -> list[str]:
+def _op_messages(op: GmailResolveAttachmentsOperator, caplog) -> list[str]:
     """Ordered ``getMessage()`` of INFO records emitted by *this operator's* logger.
 
     Filtered to ``INFO`` so the unrelated ``ExecutorSafeguard`` WARNING
@@ -167,7 +167,7 @@ def test_logs_summary_and_each_path(fake_s3, caplog):
     ]
 
 
-def test_logs_empty_input(fake_s3, caplog):
+def test_logs_empty_input(caplog):
     op = GmailResolveAttachmentsOperator(task_id="resolve", manifests=[])
     with caplog.at_level(logging.INFO):
         assert op.execute(context={}) == []

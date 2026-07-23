@@ -67,7 +67,9 @@ class GmailResolveAttachmentsOperator(BaseOperator):
         )
         self.log.info(
             "Resolved %d manifest(s) (pick=%s) → %d attachment(s).",
-            len(self.manifests), self.pick, len(result),
+            len(self.manifests),
+            self.pick,
+            len(result),
         )
         for path in result:
             self.log.info("  %r", path)  # %r — path is untrusted (foreign manifest)
