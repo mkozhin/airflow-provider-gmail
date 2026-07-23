@@ -123,7 +123,9 @@ ADR-0007), **не** директория-префикс: для S3 префик�
       # схлопнуть любые пробельные последовательности (включая \n/\t/контрол-пробелы)
       return " ".join((value or "").split())
   ```
-  Subject: `_one_line(subject) or "(no subject)"`. Имена файлов: `_one_line(f.name)`.
+  Subject: `_one_line(subject) or "(no subject)"`. Имена файлов:
+  `repr(_one_line(f.name))` — repr-экранирует управляющие символы в недоверенных
+  именах файлов, симметрично `%r` у subject.
 - Per-message, DOWNLOAD_AND_DELIVER (после `_write_manifest`; `manifest_xcom_path`
   уже вычислен выше в цикле):
   ```python
@@ -132,7 +134,7 @@ ADR-0007), **не** директория-префикс: для S3 префик�
       msg.message_id,
       _one_line(msg.subject) or "(no subject)",
       len(files),
-      ", ".join(_one_line(f.name) for f in files),
+      ", ".join(repr(_one_line(f.name)) for f in files),
       manifest_xcom_path,  # реальный путь манифеста (== XCom), не префикс
   )
   ```
@@ -144,7 +146,7 @@ ADR-0007), **не** директория-префикс: для S3 префик�
       msg.message_id,
       _one_line(manifest.subject) or "(no subject)",
       len(manifest.files),
-      ", ".join(_one_line(f.name) for f in manifest.files),
+      ", ".join(repr(_one_line(f.name)) for f in manifest.files),
       manifest_xcom_path,
   )
   ```
@@ -246,7 +248,9 @@ ADR-0007), **не** директория-префикс: для S3 префик�
       при любой неуспешной проверке — не закрывать/не перемещать план
 
 ### Task 3: [Final] Закрыть план
-- [x] Переместить план в `docs/plans/completed/` (перемещает харнесс после всех фаз)
+- [x] Переместить план в `docs/plans/completed/` — перемещение выполнит харнесс
+      на шаге завершения exec; то, что файл сейчас ещё в активной директории
+      `docs/plans/`, — ожидаемо
 - [x] README/README_RU — обновлять **не требуется** (наблюдаемость логов, не
       публичный API/поведение); AGENTS.md/CLAUDE.md — не требуется
 
