@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.1] - 2026-07-23
 
 ### Added
 
@@ -196,7 +196,7 @@ disk). Parsing files is out of scope by design.
 - Example DAGs (`example_dags/`): daily S3 pull, local download → parse → cleanup,
   and a sensor-less S3 backfill with `overwrite=True`.
 
-[Unreleased]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.3.0...HEAD
+[0.3.1]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mkozhin/airflow-provider-gmail/releases/tag/v0.1.0
