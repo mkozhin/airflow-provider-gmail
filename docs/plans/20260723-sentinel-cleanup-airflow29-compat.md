@@ -139,15 +139,17 @@ def _clear_safeguard_sentinel(op):
       проходит)
 
 ### Task 2: Verify acceptance criteria
-- [ ] Grep: в `tests/test_operator_s3.py` нет незащищённого `ExecutorSafeguard._sentinel`
+- [x] Grep: в `tests/test_operator_s3.py` нет незащищённого `ExecutorSafeguard._sentinel`
       (единственное обращение — через `getattr(..., "_sentinel", None)` внутри
       `_clear_safeguard_sentinel`)
-- [ ] Полный набор: `.venv/bin/python -m pytest` — все проходят
-- [ ] Покрытие: `.venv/bin/python -m pytest --cov=airflow_provider_gmail
+- [x] Полный набор: `.venv/bin/python -m pytest` — все проходят
+- [x] Покрытие: `.venv/bin/python -m pytest --cov=airflow_provider_gmail
       --cov-report=term-missing` — не ниже 99%
-- [ ] **2.9.1 CI-gate**: authoritative только на CI (`.github/workflows/tests.yml`).
+- ⚠️ **2.9.1 CI-gate**: authoritative только на CI (`.github/workflows/tests.yml`).
       Локально не воспроизвести (`.venv`=2.11.2, downgrade не делаем). Отметить
-      `⚠️` до зелёной CI — это снимаемый пушем блокер
+      `⚠️` до зелёной CI — это снимаемый пушем блокер. Pending green CI
+      (`.github/workflows/tests.yml`); local `.venv` is 2.11.2, not downgraded;
+      blocker removed by push + green CI matrix
 
 ### Task 3: [Final] Закрыть план
 - [ ] Переместить план в `docs/plans/completed/` (харнесс при exec; иначе —
