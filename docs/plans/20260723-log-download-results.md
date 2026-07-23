@@ -235,14 +235,14 @@ ADR-0007), **не** директория-префикс: для S3 префик�
       tests/test_operator_s3.py tests/test_operator_local.py` — зелёный перед Task 2
 
 ### Task 2: Verify acceptance criteria
-- [ ] Проверить требования из Overview: per-message строки (вкл. `DELIVER_ONLY`) +
+- [x] Проверить требования из Overview: per-message строки (вкл. `DELIVER_ONLY`) +
       сводка присутствуют, `from` не логируется, «куда» = путь манифеста,
       формулировки storage-agnostic
-- [ ] Полный набор: `.venv/bin/python -m pytest` — все проходят
-- [ ] Покрытие: `.venv/bin/python -m pytest --cov=airflow_provider_gmail
+- [x] Полный набор: `.venv/bin/python -m pytest` — все проходят
+- [x] Покрытие: `.venv/bin/python -m pytest --cov=airflow_provider_gmail
       --cov-report=term-missing` — не ниже 99%; новые ветки логирования покрыты
-- [ ] Убедиться, что существующие тесты (в т.ч. SKIP-строка, sensor) не сломаны
-- [ ] **Gate:** и полный `pytest`, и покрытие ≥99% должны пройти **до** Task 3;
+- [x] Убедиться, что существующие тесты (в т.ч. SKIP-строка, sensor) не сломаны
+- [x] **Gate:** и полный `pytest`, и покрытие ≥99% должны пройти **до** Task 3;
       при любой неуспешной проверке — не закрывать/не перемещать план
 
 ### Task 3: [Final] Закрыть план
