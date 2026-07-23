@@ -18,6 +18,7 @@ import pytest
 
 from airflow.exceptions import AirflowSkipException
 from airflow.models.base import _sentinel
+from airflow.models.baseoperator import ExecutorSafeguard
 
 from airflow_provider_gmail.hooks.gmail import GmailHook, MessageWithAttachments
 from airflow_provider_gmail.manifest import Manifest, ManifestError
@@ -281,11 +282,11 @@ def test_execute_logs_no_warning_when_invoked_with_sentinel(caplog):
     with caplog.at_level(logging.WARNING):
         op_b.execute(ctx, **sentinel_kw)
     assert "cannot be called outside TaskInstance!" not in caplog.text
-    # NB: the sentinel branch stores "GmailAttachmentsToS3Operator__sentinel" in
-    # ExecutorSafeguard's process-wide thread-local and never pops it (only the
-    # no-sentinel path pops, and it pops under the BaseOperator.execute qualname
-    # key, which never matches). The lingering entry is harmless: no later test
-    # picks it up, and none asserts the S3 warning after this one.
+    # ExecutorSafeguard stored our sentinel keyed by the runtime class and never
+    # popped it (only the no-sentinel path pops). On Airflow 2.11 the S3 operator
+    # has its own `execute`, so a later bare S3 execute() would consume this
+    # leftover and be wrongly silenced. Clear it to keep tests isolated.
+    ExecutorSafeguard._sentinel.callers.pop(f"{type(op_b).__name__}__sentinel", None)
 
 
 # -- XCom URI vs manifest key divergence (ADR-0007) --------------------------
