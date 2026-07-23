@@ -10,6 +10,7 @@ S3" assertions test the query the operator would truly issue.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -265,14 +266,13 @@ def test_execute_logs_no_warning_when_invoked_with_sentinel(caplog):
     # super().execute() removes the nested call that tripped ExecutorSafeguard.
     # The safeguard suppresses its WARNING only when the sentinel kwarg is present
     # (as TaskInstance passes it to the OUTER execute); a nested call loses it.
-    import logging
-
     msg = _message("msg1", "a.xlsx")
     ctx = _context()
 
     # (a) negative control: a bare execute() WITHOUT the sentinel logs the WARNING.
     # Proves the safeguard is active and caplog sees it (and unit_test_mode=False;
-    # under True the check is skipped and this branch would silently pass empty).
+    # under True the check is skipped and this branch would fail loudly on the
+    # assertion below, flagging that the test became vacuous).
     op_a = _make_op({})
     op_a.hook = FakeGmailHook([msg])
     with caplog.at_level(logging.WARNING):
