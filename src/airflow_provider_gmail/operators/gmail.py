@@ -490,18 +490,22 @@ class GmailAttachmentsToS3Operator(GmailAttachmentsBaseOperator):
         self.aws_conn_id = aws_conn_id
         self._cached_s3_hook = None
 
-    def execute(self, context: Any) -> list[str]:
-        """Validate the rendered ``prefix``, then run the base orchestration.
+    def pre_execute(self, context: Any) -> None:
+        """Validate the rendered ``prefix`` before the base orchestration runs.
 
-        ``prefix`` is a template field, so it is validated here on its **rendered**
+        ``prefix`` is a template field, so it is validated on its **rendered**
         value (parity with ``date_from``/``date_to``, ADR-0004) — not in
-        ``__init__``, where a ``{{ ds }}`` template would trip the ``{``/``}``
-        check. A ``prefix`` with URL-hostile characters fails fast with a clear
-        :class:`ValueError` so produced object keys stay URL-safe by construction
-        (ADR-0007).
+        ``__init__`` where a ``{{ ds }}`` template would trip the ``{``/``}``
+        check. ``TaskInstance`` calls ``pre_execute`` after template rendering and
+        before ``execute``, so the rendered ``prefix`` is available and validation
+        still fails fast (ValueError) with a clear message, keeping produced object
+        keys URL-safe by construction (ADR-0007). Validation lives here — not in an
+        overriding ``execute`` calling ``super().execute()`` — because that nested
+        call trips ``ExecutorSafeguard`` and logs a spurious
+        "... .execute cannot be called outside TaskInstance!" warning.
         """
+        super().pre_execute(context)
         validate_prefix(self.prefix)
-        return super().execute(context)
 
     def _s3_hook(self):
         """The cached :class:`S3Hook`, importing the Amazon provider lazily.

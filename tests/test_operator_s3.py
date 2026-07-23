@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from airflow.exceptions import AirflowSkipException
+from airflow.models.base import _sentinel
 
 from airflow_provider_gmail.hooks.gmail import GmailHook, MessageWithAttachments
 from airflow_provider_gmail.manifest import Manifest, ManifestError
@@ -175,7 +176,11 @@ def _context(run_id: str = CURRENT_RUN) -> dict:
 
 def _run(op, hook, context: dict | None = None):
     op.hook = hook
-    return op.execute(context or _context())
+    ctx = context or _context()
+    # Mirror the TaskInstance lifecycle order (pre_execute → execute) so the
+    # rendered-prefix validation (now in pre_execute) runs for direct-call tests.
+    op.pre_execute(ctx)
+    return op.execute(ctx)
 
 
 # -- template_fields / basic config ------------------------------------------
@@ -215,27 +220,75 @@ def test_s3_hook_lazily_constructs_real_hook_with_aws_conn_id():
 
 def test_templated_prefix_does_not_fail_at_construction():
     # A Jinja prefix contains { } (both forbidden in a key), so validation must
-    # NOT run in __init__ — only on the rendered value in execute().
+    # NOT run in __init__ — only on the rendered value in pre_execute().
     op = GmailAttachmentsToS3Operator(
         task_id="t", source="avito", bucket=BUCKET, prefix="{{ ds }}"
     )
     assert op.prefix == "{{ ds }}"
 
 
-def test_execute_invalid_rendered_prefix_raises():
+def test_pre_execute_invalid_rendered_prefix_raises():
     op = _make_op({}, prefix="gmail/a#b")
     hook = FakeGmailHook([_message("msg1", "a.xlsx")])
     with pytest.raises(ValueError, match="prefix"):
         _run(op, hook)
 
 
-def test_execute_valid_prefix_passes():
+def test_pre_execute_valid_prefix_passes():
     store: dict = {}
     msg = _message("msg1", "a.xlsx")
     op = _make_op(store, prefix="gmail/avito")
     hook = FakeGmailHook([msg])
     result = _run(op, hook)
     assert result == [_manifest_uri(msg)]
+
+
+def test_user_pre_execute_hook_runs_before_prefix_validation():
+    # The override's super().pre_execute() must still invoke a user-supplied
+    # pre_execute= hook, and it must run BEFORE validate_prefix: a spy hook fires
+    # even though a hostile prefix makes validation raise right after.
+    calls: list[str] = []
+    op = _make_op(
+        {}, prefix="gmail/a#b", pre_execute=lambda context: calls.append("hook")
+    )
+    op.hook = FakeGmailHook([_message("msg1", "a.xlsx")])
+    with pytest.raises(ValueError, match="prefix"):
+        op.pre_execute(_context())
+    assert calls == ["hook"]  # hook ran (via super) before the ValueError
+
+
+# -- ExecutorSafeguard: no spurious WARNING when called like TaskInstance -----
+
+
+def test_execute_logs_no_warning_when_invoked_with_sentinel(caplog):
+    # The whole point of the fix: dropping the execute() override that called
+    # super().execute() removes the nested call that tripped ExecutorSafeguard.
+    # The safeguard suppresses its WARNING only when the sentinel kwarg is present
+    # (as TaskInstance passes it to the OUTER execute); a nested call loses it.
+    import logging
+
+    msg = _message("msg1", "a.xlsx")
+    ctx = _context()
+
+    # (a) negative control: a bare execute() WITHOUT the sentinel logs the WARNING.
+    # Proves the safeguard is active and caplog sees it (and unit_test_mode=False;
+    # under True the check is skipped and this branch would silently pass empty).
+    op_a = _make_op({})
+    op_a.hook = FakeGmailHook([msg])
+    with caplog.at_level(logging.WARNING):
+        op_a.pre_execute(ctx)
+        op_a.execute(ctx)
+    assert "cannot be called outside TaskInstance!" in caplog.text
+    caplog.clear()  # MANDATORY: caplog.records accumulate across branches
+
+    # (b) as TaskInstance does: pass the sentinel to execute() → no WARNING.
+    op_b = _make_op({})
+    op_b.hook = FakeGmailHook([msg])
+    sentinel_kw = {f"{type(op_b).__name__}__sentinel": _sentinel}
+    with caplog.at_level(logging.WARNING):
+        op_b.pre_execute(ctx)
+        op_b.execute(ctx, **sentinel_kw)
+    assert "cannot be called outside TaskInstance!" not in caplog.text
 
 
 # -- XCom URI vs manifest key divergence (ADR-0007) --------------------------

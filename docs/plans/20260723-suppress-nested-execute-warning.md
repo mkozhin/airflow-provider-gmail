@@ -208,37 +208,37 @@ retries).
 - Modify: `tests/test_operator_s3.py`
 
 Реализация:
-- [ ] удалить метод `execute` (стр. ~493-504) в `GmailAttachmentsToS3Operator`
-- [ ] добавить `pre_execute(self, context)` в тот же класс: сначала
+- [x] удалить метод `execute` (стр. ~493-504) в `GmailAttachmentsToS3Operator`
+- [x] добавить `pre_execute(self, context)` в тот же класс: сначала
       `super().pre_execute(context)`, затем `validate_prefix(self.prefix)`;
       перенести docstring-обоснование (rendered `prefix`, паритет с
       `date_from`/`date_to`, ADR-0004/0007, причина: ExecutorSafeguard/вложенный
       вызов) в docstring `pre_execute`
-- [ ] убедиться, что `validate_prefix` остаётся импортированным/используемым
+- [x] убедиться, что `validate_prefix` остаётся импортированным/используемым
       (стр. 55); лишних импортов не осталось
-- [ ] `utils/paths.py:70` (docstring `validate_prefix`): «at the top of
+- [x] `utils/paths.py:70` (docstring `validate_prefix`): «at the top of
       `execute()`/`poke()`» → отразить новое место (S3-оператор валидирует в
       `pre_execute()`, сенсор — в `poke()`)
-- [ ] `sensors/gmail.py:359` (docstring `poke`): «parity with the S3 operator's
+- [x] `sensors/gmail.py:359` (docstring `poke`): «parity with the S3 operator's
       `execute()`» → «... `pre_execute()`»
 
 Тесты (в этой же задаче):
-- [ ] обновить хелпер `_run` (стр. 176-178): `op.pre_execute(context)` перед
+- [x] обновить хелпер `_run` (стр. 176-178): `op.pre_execute(context)` перед
       `op.execute(context)` — повторить порядок `TaskInstance`
-- [ ] актуализировать комментарии про «валидацию в `execute()`» (напр. стр. ~218)
+- [x] актуализировать комментарии про «валидацию в `execute()`» (напр. стр. ~218)
       → «в `pre_execute()`»
-- [ ] переименовать `test_execute_invalid_rendered_prefix_raises` /
+- [x] переименовать `test_execute_invalid_rendered_prefix_raises` /
       `test_execute_valid_prefix_passes` →
       `test_pre_execute_invalid_rendered_prefix_raises` /
       `test_pre_execute_valid_prefix_passes`; убедиться, что проходят (ошибка
       валидации теперь из `pre_execute`)
-- [ ] добавить тест на WARNING **с передачей sentinel** и **`caplog.clear()` между
+- [x] добавить тест на WARNING **с передачей sentinel** и **`caplog.clear()` между
       ветками** (см. Testing Strategy): ветка без sentinel → WARNING есть
       (negative-control), ветка с `**{f"{type(op).__name__}__sentinel": _sentinel}`
       → WARNING нет
-- [ ] добавить тест сохранения пользовательского `pre_execute`-хука: хук из
+- [x] добавить тест сохранения пользовательского `pre_execute`-хука: хук из
       параметра `pre_execute=` вызывается и вызывается **до** `validate_prefix`
-- [ ] запустить `pytest tests/test_operator_s3.py` — **должно быть зелёным**
+- [x] запустить `pytest tests/test_operator_s3.py` — **должно быть зелёным**
       перед переходом к Task 2
 
 ### Task 2: Запись в CHANGELOG
