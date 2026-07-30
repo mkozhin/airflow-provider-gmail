@@ -16,6 +16,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from conftest import render_fields
+
 from airflow_provider_gmail.hooks.gmail import GmailHook, MessageWithAttachments
 from airflow_provider_gmail.manifest import Manifest, ManifestError
 from airflow_provider_gmail.dates import to_local_date, to_local_iso
@@ -23,6 +25,7 @@ from airflow_provider_gmail.operators.gmail import GmailAttachmentsToS3Operator
 from airflow_provider_gmail.sensors.gmail import GmailAttachmentToS3Sensor
 from airflow_provider_gmail.utils.mime import Attachment
 from airflow_provider_gmail.utils.paths import manifest_key
+from airflow_provider_gmail.window import Window
 
 MSK = "Europe/Moscow"
 BUCKET = "my-bucket"
@@ -156,6 +159,31 @@ def test_template_fields_add_bucket_and_prefix():
     assert {"bucket", "prefix"} <= tf
     # inherits the base filter fields too
     assert {"query", "source", "date_from", "date_to"} <= tf
+
+
+def test_poke_renders_lookback_days_from_template():
+    # GmailAttachmentToS3Sensor does not override __init__'s handling of
+    # templated fields nor _find_messages() (ADR-0009): this is the single
+    # check that the subclass was not accidentally left behind when the base
+    # sensor's lookback_days became templated (Task 5a).
+    sensor = _make_sensor(
+        {}, lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}"
+    )
+    render_fields(sensor, lookback_days=14)
+    assert sensor.lookback_days == "14"  # rendered (string-mode Jinja), not yet cast
+
+    hook = FakeGmailHook([])
+    assert _poke(sensor, hook) is False
+
+    expected = GmailHook("unused").build_query(
+        Window.resolve(_context()["data_interval_end"], MSK, 14),
+        None,
+        None,
+        False,
+        None,
+        None,
+    )
+    assert hook.built_query == expected
 
 
 def test_default_mode_is_reschedule():

@@ -665,59 +665,59 @@ assert record.args == (3,)  # int 3, а не строка "3"
 - Modify: `tests/test_sensor.py`
 - Modify: `tests/test_sensor_s3.py`
 
-- [ ] импортировать `resolve_lookback_days` из `airflow_provider_gmail.dates`,
+- [x] импортировать `resolve_lookback_days` из `airflow_provider_gmail.dates`,
       убрать импорт `validate_lookback_days` из этого файла (её вызов
       убирается следующим пунктом; сама функция в `dates.py` остаётся до
       Task 5b — это последний внутрипакетный потребитель); `validate_timezone`
       оставить как есть
-- [ ] добавить `"lookback_days"` в `GmailAttachmentSensor.template_fields`
-- [ ] изменить аннотацию `lookback_days: int = 7` в `__init__` на
+- [x] добавить `"lookback_days"` в `GmailAttachmentSensor.template_fields`
+- [x] изменить аннотацию `lookback_days: int = 7` в `__init__` на
       `int | str = 7`, убрать вызов `validate_lookback_days(lookback_days)`,
       присваивание оставить как есть
-- [ ] исправить ставший наполовину ложным инлайн-комментарий на
+- [x] исправить ставший наполовину ложным инлайн-комментарий на
       `sensors/gmail.py:124-125` (парный операторскому — верна только половина
       про timezone)
-- [ ] в `_find_messages()`: добавить `lookback_days =
+- [x] в `_find_messages()`: добавить `lookback_days =
       resolve_lookback_days(self.lookback_days)` в начале, заменить
       последующие обращения к `self.lookback_days` (сравнение для WARNING,
       `Window.resolve(...)`) на локальную переменную
-- [ ] обновить докстринг класса: `lookback_days` теперь templated, по аналогии
+- [x] обновить докстринг класса: `lookback_days` теперь templated, по аналогии
       с `date_from`/`date_to`; расширить существующую заметку «Pairing with
       the local operator: match `lookback_days`» указанием, что это верно
       независимо от того, обычный ли это int или отрендеренный шаблон
-- [ ] обновить `test_template_fields_match_base_operator` (строка 130, сейчас
+- [x] обновить `test_template_fields_match_base_operator` (строка 130, сейчас
       **строгое равенство**): её посылка меняется — базовый оператор теперь
       имеет и `lookback_days`, и `overwrite`, сенсор — только
       `lookback_days` — переименовать (например,
       `test_sensor_template_fields_are_operator_subset_minus_overwrite`) и
       проверять новый точный набор плюс комментарий, фиксирующий осознанную
       асимметрию
-- [ ] добавить `assert "overwrite" not in GmailAttachmentSensor.template_fields`
+- [x] добавить `assert "overwrite" not in GmailAttachmentSensor.template_fields`
       в `test_sensor_has_no_overwrite_parameter` (строка 183) — guard, который
       поймает случайный copy-paste `overwrite` в сенсор
-- [ ] заменить `test_negative_lookback_days_fails_at_init` на тест на
+- [x] заменить `test_negative_lookback_days_fails_at_init` на тест на
       исключение в рантайме: `__init__` с `lookback_days=-1` не падает,
       `poke()` падает (`ValueError`)
-- [ ] добавить тест на рендер (`render_fields` из `tests/conftest.py`):
+- [x] добавить тест на рендер (`render_fields` из `tests/conftest.py`):
       `lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}"`,
       `lookback_days=14` → `poke()` ищет в 14-дневном окне
-- [ ] **не** менять `test_range_override_warning_logged_once_across_pokes`
+- [x] **не** менять `test_range_override_warning_logged_once_across_pokes`
       (строка 194, единственный WARNING-тест сенсора) в этой задаче — она
       остаётся с обычным `int`; строковая версия — в исключительном владении Task 6
-- [ ] расширить `test_query_parity_with_local_operator` (строка 233) и/или
+- [x] расширить `test_query_parity_with_local_operator` (строка 233) и/или
       `test_query_parity_with_explicit_range` (строка 280) вариантом, где
       `lookback_days` передаётся **строкой** и сенсору, и оператору под
       тестом — доказывает, что сам каст остаётся идентичным между ними, а
       именно от этого зависит инвариант «query parity» теперь, когда
       `lookback_days` может быть templated
-- [ ] добавить один тест на рендер для `GmailAttachmentToS3Sensor` в
+- [x] добавить один тест на рендер для `GmailAttachmentToS3Sensor` в
       `tests/test_sensor_s3.py`, подтверждающий, что он наследует
       шаблонизированное поведение `lookback_days` без изменений через
       `_find_messages()` — для этого подкласса изменений продакшн-кода не
       ожидается (он не переопределяет `_find_messages()` ни обработку
       templated-полей в `__init__`); эта единственная проверка существует,
       чтобы доказать, что подкласс не был случайно упущен
-- [ ] прогнать тесты — должны пройти перед task 5b
+- [x] прогнать тесты — должны пройти перед task 5b
 
 ### Task 5b: Вывод из эксплуатации `validate_lookback_days`
 
