@@ -59,6 +59,7 @@ This provider follows the standard layout codified by the **`airflow-pypi-provid
 - Always install with the constraint pin (see *Development commands*), otherwise `>=2.9,<3` pulls Airflow 2.11.
 - Tests use pytest; mock at the `googleapiclient` service level (`hook.get_conn()`), no network.
 - The packaging smoke test (`python -m build` → install wheel → assert `get_provider_info()` / `ProvidersManager`) is marked `@pytest.mark.packaging` and **excluded from the default run** (slow/brittle). Run it explicitly when touching packaging.
+- `tests/conftest.py` holds a shared `render_fields(op, **conf)` helper for rendering `template_fields` via a bare `SandboxedEnvironment` (no `DAG`/`DagBag` needed) — it is a plain function, not a fixture, so each test module must `from conftest import render_fields` explicitly; pytest does not auto-inject it.
 
 ## Domain traps (see ADRs / plan)
 

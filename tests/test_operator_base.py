@@ -254,6 +254,19 @@ def test_negative_lookback_days_raises_at_execute_not_init():
         op.execute(_context())
 
 
+def test_overwrite_none_literal_does_not_raise_at_init_but_raises_at_execute():
+    # The concrete backward-incompatibility case called out in the plan's
+    # Development Approach: a DAG writing `overwrite=some_dict.get("overwrite")`
+    # (plain Python, no Jinja at all) used to get `None`, silently treated as
+    # `False`. After ADR-0009, resolve_overwrite(None) raises instead of a
+    # silent fallback. __init__ must still accept it as-is (overwrite is
+    # templated, no __init__-time validation).
+    op = _make_operator(overwrite=None)
+    assert op.overwrite is None
+    with pytest.raises(ValueError):
+        op.execute(_context())
+
+
 def test_init_unknown_timezone_raises():
     with pytest.raises(ValueError):
         _make_operator(timezone="Mars/Olympus")
@@ -638,6 +651,25 @@ def test_execute_renders_invalid_lookback_days_raises():
     op = _DictOperator(
         task_id="t",
         source="avito",
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
+    )
+    render_fields(op, lookback_days=-1)
+    hook = _FakeHook([])
+    with pytest.raises(ValueError):
+        _run(op, hook)
+
+
+def test_execute_invalid_lookback_days_raises_even_with_explicit_range():
+    # ADR-0009's documented trade-off: resolve_lookback_days() runs
+    # unconditionally at the top of _run(), even when date_from/date_to are
+    # given and Window.resolve() would end up ignoring lookback_days entirely.
+    # A garbage rendered lookback_days must still raise, proving the cast is
+    # NOT short-circuited by the presence of an explicit range.
+    op = _DictOperator(
+        task_id="t",
+        source="avito",
+        date_from="2026-07-01",
+        date_to="2026-07-10",
         lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
     )
     render_fields(op, lookback_days=-1)

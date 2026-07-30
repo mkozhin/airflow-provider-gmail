@@ -294,6 +294,23 @@ def test_poke_renders_invalid_lookback_days_raises():
         _poke(sensor, hook)
 
 
+def test_poke_invalid_lookback_days_raises_even_with_explicit_range():
+    # Mirror of the operator's equivalent test (ADR-0009's documented
+    # trade-off): resolve_lookback_days() runs unconditionally at the top of
+    # _find_messages(), even when date_from/date_to are given and
+    # Window.resolve() would end up ignoring lookback_days entirely. A garbage
+    # rendered lookback_days must still raise.
+    sensor = _make_sensor(
+        date_from="2026-07-01",
+        date_to="2026-07-10",
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
+    )
+    render_fields(sensor, lookback_days=-1)
+    hook = FakeGmailHook([])
+    with pytest.raises(ValueError):
+        _poke(sensor, hook)
+
+
 def test_poke_native_rendered_int_lookback_days_builds_expected_window():
     # render_template_as_native_obj=True hands back a real python int (not a
     # string) from dag_run.conf — resolve_lookback_days must accept it as-is,

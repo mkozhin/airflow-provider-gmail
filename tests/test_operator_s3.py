@@ -17,10 +17,12 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from airflow.exceptions import AirflowSkipException
+from airflow.models import DAG
 from airflow.models.base import _sentinel
 from airflow.models.baseoperator import ExecutorSafeguard
 
 from conftest import render_fields
+
 from airflow_provider_gmail.hooks.gmail import GmailHook, MessageWithAttachments
 from airflow_provider_gmail.manifest import Manifest, ManifestError
 from airflow_provider_gmail.dates import to_local_date, to_local_iso
@@ -454,6 +456,36 @@ def test_templated_overwrite_false_does_not_force_redownload():
     result = _run(op, hook)
     assert result == [_manifest_uri(msg)]
     assert hook.downloaded == []  # not forced to re-download — normal DELIVER_ONLY
+
+
+def test_templated_overwrite_native_rendered_bool_forces_download():
+    # Mirror of test_execute_native_rendered_int_lookback_days_builds_expected_window
+    # (test_operator_base.py) but for overwrite: render_template_as_native_obj=True
+    # hands back a real python bool (not a string) from dag_run.conf —
+    # resolve_overwrite must accept it as-is, and the rendered value must
+    # actually reach self.overwrite through a real render_template_fields()
+    # pass, not just work when the resolver is called directly.
+    dag = DAG(
+        "native_overwrite_dag",
+        start_date=datetime(2026, 1, 1, tzinfo=ZoneInfo("UTC")),
+        schedule=None,
+        render_template_as_native_obj=True,
+    )
+    store: dict = {}
+    msg = _message("msg1", "a.xlsx")
+    _seed_manifest(store, msg, CURRENT_RUN)
+    op = _make_op(
+        store,
+        overwrite="{{ dag_run.conf['overwrite'] }}",
+        dag=dag,
+    )
+    render_fields(op, overwrite=True)
+    assert op.overwrite is True
+
+    hook = FakeGmailHook([msg])
+    result = _run(op, hook)
+    assert result == [_manifest_uri(msg)]
+    assert hook.downloaded == [("msg1", "a.xlsx")]  # overwrite → re-download
 
 
 def test_empty_prefix_produces_no_leading_slash_keys():

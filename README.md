@@ -250,7 +250,10 @@ and `aws_conn_id` (default `"aws_default"`).
   storage-aware sensor discards messages that already have a *past-run* manifest
   and would report "no work", so the operator behind it never runs. Drive overwrite
   backfills **without** that sensor — manually, or from a dedicated sensor-less
-  backfill DAG (see `example_gmail_s3_backfill.py`).
+  backfill DAG (see `example_gmail_s3_backfill.py`). Since `overwrite` is now
+  templated (ADR-0009), this deadlock can be triggered by a plain `dag_run.conf`
+  value change alone — no DAG file edit needed (e.g. someone flips `overwrite`
+  to `true` for a backfill run without touching the DAG).
   **PAUSE the daily DAG before backfilling over a shared prefix.** `max_active_runs=1`
   is per-DAG — it serializes a backfill DAG's own runs but does **not** serialize
   it against the daily DAG over the same prefix. Run both at once and the

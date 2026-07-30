@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from conftest import render_fields
+
 from airflow_provider_gmail.hooks.gmail import GmailHook, MessageWithAttachments
 from airflow_provider_gmail.dates import to_local_date
 from airflow_provider_gmail.operators.gmail import GmailAttachmentsToLocalOperator
