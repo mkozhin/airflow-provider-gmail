@@ -724,13 +724,13 @@ assert record.args == (3,)  # int 3, а не строка "3"
 **Files:**
 - Modify: `src/airflow_provider_gmail/dates.py`
 
-- [ ] **теперь, когда оба потребителя мигрированы** (оператор в Task 2, сенсор
+- [x] **теперь, когда оба потребителя мигрированы** (оператор в Task 2, сенсор
       в Task 5a), полностью удалить `validate_lookback_days` из
       `src/airflow_provider_gmail/dates.py` (deprecated-обёртка не
       оставляется); отдельных тестов на неё нет (подтверждено в Task 1 —
       `tests/test_dates.py` их не создавал), поэтому в тестах удалять нечего
-- [ ] прогнать тесты — должны пройти перед task 6
-- [ ] убедиться, что `grep -rn validate_lookback_days src/ tests/` теперь не
+- [x] прогнать тесты — должны пройти перед task 6
+- [x] убедиться, что `grep -rn validate_lookback_days src/ tests/` теперь не
       находит ничего — именно в этой точке плана это становится верным
 
 ### Task 6: Регрессионный тест — сравнение в WARNING после каста

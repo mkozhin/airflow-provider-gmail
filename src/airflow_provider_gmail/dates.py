@@ -61,26 +61,12 @@ def _parse_iso_date(value: str | None, field: str) -> date | None:
         ) from exc
 
 
-def validate_lookback_days(lookback_days: int) -> None:
-    """Reject a negative ``lookback_days`` at construction time (DAG parse).
-
-    ``0`` means "today only"; a negative value would build an ``after:`` boundary
-    in the *future*. Shared by the operator base and the sensor ``__init__`` so
-    invalid config fails at DAG parse rather than on the first run/poke.
-    """
-    if lookback_days < 0:
-        raise ValueError(
-            f"lookback_days must be >= 0 (0 means 'today only'), got {lookback_days}"
-        )
-
-
 def resolve_lookback_days(value: int | str | None) -> int:
     """Cast a templated (or plain) ``lookback_days`` value to a validated ``int``.
 
     Called at runtime (``execute()``/``poke()``), *after* Jinja rendering, so it
     handles both a plain Python ``int`` literal and a rendered template string
-    the same way — unlike :func:`validate_lookback_days`, which only checked an
-    already-``int`` value at ``__init__`` time.
+    the same way.
 
     The fallback is strict: there is no silent default. A rendered empty
     string, ``"None"`` (the classic ``{{ dag_run.conf.get('x') }}`` trap when
