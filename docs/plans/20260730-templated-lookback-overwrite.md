@@ -763,7 +763,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
 **Files:**
 - Create: `docs/adr/0009-lookback-days-overwrite-templated.md`
 
-- [ ] написать ADR в существующем стиле (см. ADR-0004/0005): Context
+- [x] написать ADR в существующем стиле (см. ADR-0004/0005): Context
       (симметрия с `date_from`/`date_to`, ADR-0004; контраст с
       `attachment_pattern`, остающимся не templated по ADR-0005 — не
       пересматривается), Decision (`lookback_days` + `overwrite` templated,
@@ -818,7 +818,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
         пакета, а не просто «случайно публичны» из-за отсутствия `_`-префикса.
         Отметить удаление в CHANGELOG как потенциально breaking для прямых
         импортов, не как внутренний рефакторинг (см. Task 11)
-- [ ] тесты не требуются — задача только про документацию
+- [x] тесты не требуются — задача только про документацию
 
 ### Task 8: `AGENTS.md` — доменная ловушка
 
