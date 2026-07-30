@@ -554,6 +554,18 @@ class GmailAttachmentsToS3Operator(GmailAttachmentsBaseOperator):
     ``GmailAttachmentToS3Sensor`` (which would report "no work" for a message that
     already has a *past-run* manifest); run overwrite backfills without that sensor.
 
+    ``overwrite`` is **templated** (inherited ``template_fields``/ADR-0009, cast
+    at runtime via :func:`~airflow_provider_gmail.dates.resolve_overwrite`), so a
+    ``dag_run.conf``/Jinja-driven backfill can now toggle it the same way
+    ``date_from``/``date_to`` already do (ADR-0004) — without redeploying the
+    DAG. It was previously **unvalidated**: any Python value was accepted as-is
+    and only ever tested for truthiness; now an invalid rendered/literal value
+    raises :class:`ValueError`. Templating also sharpens the existing
+    "incompatible with ``GmailAttachmentToS3Sensor``" trap above: a DAG pairing
+    this operator with that sensor can now deadlock from a plain change to
+    ``dag_run.conf`` (flipping ``overwrite`` to ``true``), with no edit to the
+    DAG file itself.
+
     The ``apache-airflow-providers-amazon`` package (the ``s3`` extra) is imported
     lazily inside the methods that need it, so this module still imports — and the
     local operator still works — when the extra is not installed.
@@ -571,7 +583,7 @@ class GmailAttachmentsToS3Operator(GmailAttachmentsBaseOperator):
         bucket: str,
         prefix: str = "",
         aws_conn_id: str = "aws_default",
-        overwrite: bool = False,
+        overwrite: bool | str = False,
         **kwargs,
     ) -> None:
         super().__init__(overwrite=overwrite, **kwargs)

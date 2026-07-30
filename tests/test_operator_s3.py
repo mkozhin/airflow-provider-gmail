@@ -20,6 +20,7 @@ from airflow.exceptions import AirflowSkipException
 from airflow.models.base import _sentinel
 from airflow.models.baseoperator import ExecutorSafeguard
 
+from conftest import render_fields
 from airflow_provider_gmail.hooks.gmail import GmailHook, MessageWithAttachments
 from airflow_provider_gmail.manifest import Manifest, ManifestError
 from airflow_provider_gmail.dates import to_local_date, to_local_iso
@@ -411,6 +412,48 @@ def test_overwrite_true_forces_download_despite_current_manifest():
     result = _run(op, hook)
     assert result == [_manifest_uri(msg)]
     assert hook.downloaded == [("msg1", "a.xlsx")]  # overwrite → re-download
+
+
+def test_templated_overwrite_true_forces_download_despite_current_manifest():
+    # Same scenario as test_overwrite_true_forces_download_despite_current_manifest
+    # (line ~405) but overwrite is a rendered Jinja string, not a plain literal —
+    # proves resolve_overwrite is actually applied to the templated value at
+    # runtime, not just callable in isolation.
+    store: dict = {}
+    msg = _message("msg1", "a.xlsx")
+    _seed_manifest(store, msg, CURRENT_RUN)
+    op = _make_op(store, overwrite="{{ dag_run.conf.get('overwrite', 'false') }}")
+    render_fields(op, overwrite="true")
+    hook = FakeGmailHook([msg])
+    result = _run(op, hook)
+    assert result == [_manifest_uri(msg)]
+    assert hook.downloaded == [("msg1", "a.xlsx")]  # overwrite → re-download
+
+
+def test_templated_overwrite_invalid_rendered_value_raises():
+    op = _make_op({}, overwrite="{{ dag_run.conf.get('overwrite', 'false') }}")
+    render_fields(op, overwrite="maybe")
+    hook = FakeGmailHook([_message("msg1", "a.xlsx")])
+    with pytest.raises(ValueError, match="overwrite"):
+        _run(op, hook)
+
+
+def test_templated_overwrite_false_does_not_force_redownload():
+    # Mirror image of the "true" case above: a rendered "false" must NOT be
+    # treated as truthy just because it is a non-empty string. Without this
+    # test, an implementation that resolves `overwrite = resolve_overwrite(...)`
+    # but keeps reading `self.overwrite` at the decision sites would still pass
+    # both the "true" and the invalid-value tests above while silently treating
+    # a rendered "false" as True.
+    store: dict = {}
+    msg = _message("msg1", "a.xlsx")
+    _seed_manifest(store, msg, CURRENT_RUN)
+    op = _make_op(store, overwrite="{{ dag_run.conf.get('overwrite', 'false') }}")
+    render_fields(op, overwrite="false")
+    hook = FakeGmailHook([msg])
+    result = _run(op, hook)
+    assert result == [_manifest_uri(msg)]
+    assert hook.downloaded == []  # not forced to re-download — normal DELIVER_ONLY
 
 
 def test_empty_prefix_produces_no_leading_slash_keys():

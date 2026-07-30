@@ -564,10 +564,10 @@ assert record.args == (3,)  # int 3, а не строка "3"
 - Modify: `src/airflow_provider_gmail/operators/gmail.py` (`GmailAttachmentsToS3Operator`: аннотация `__init__` + докстринг класса)
 - Modify: `tests/test_operator_s3.py`
 
-- [ ] изменить аннотацию `overwrite: bool = False` в
+- [x] изменить аннотацию `overwrite: bool = False` в
       `GmailAttachmentsToS3Operator.__init__` на `overwrite: bool | str = False`
       (проброс в базовый класс уже корректен, логика не меняется)
-- [ ] обновить докстринг класса: отметить, что `overwrite` теперь templated
+- [x] обновить докстринг класса: отметить, что `overwrite` теперь templated
       (унаследовано от базового класса) и сочетается с существующей заметкой
       про backfill через `date_from`/`date_to` (ADR-0004) — backfill,
       управляемый через `dag_run.conf`, теперь может переключать `overwrite`
@@ -578,7 +578,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
       (README.md:230 и докстринги S3-оператора/S3-сенсора) — DAG с этим
       сенсором и templated `overwrite` теперь может тихо встать в deadlock от
       простого изменения значения в `conf`, без правки самого DAG-файла
-- [ ] добавить тест на рендер (`render_fields` из `tests/conftest.py`):
+- [x] добавить тест на рендер (`render_fields` из `tests/conftest.py`):
       `overwrite="{{ dag_run.conf.get('overwrite', 'false') }}"`, рендер с
       `overwrite="true"`, затем запустить через существующие хелперы
       `_make_op`/`_run` плюс фикстуру манифеста, которая иначе привела бы к
@@ -586,9 +586,9 @@ assert record.args == (3,)  # int 3, а не строка "3"
       принудительной перезагрузки (по аналогии с
       `test_overwrite_true_forces_download_despite_current_manifest`, строка
       405, но со templated-значением)
-- [ ] добавить негативный тест на рендер: значение conf `"maybe"` →
+- [x] добавить негативный тест на рендер: значение conf `"maybe"` →
       `execute()` падает с `ValueError`
-- [ ] добавить тест на рендер значения `"false"` **с существующим манифестом
+- [x] добавить тест на рендер значения `"false"` **с существующим манифестом
       текущего run'а** (тот же фикстурный сетап, что использует
       `test_overwrite_true_forces_download_despite_current_manifest`, но
       наоборот): убедиться, что путь принудительной перезагрузки НЕ
@@ -601,7 +601,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
       `decide(manifest, run_id, overwrite)`), пройдёт оба существующих теста
       и всё равно трактует `"false"` как `True` по «правдивости» непустой
       строки — только явный тест на `"false"` это ловит
-- [ ] прогнать тесты — должны пройти перед task 4
+- [x] прогнать тесты — должны пройти перед task 4
 
 ### Task 4: Локальный оператор — аннотации + точная документация `overwrite`
 
