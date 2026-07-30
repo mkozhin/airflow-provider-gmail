@@ -135,7 +135,7 @@ base parameters below and each add a few of their own.
 | `has_attachment` | `bool` | `False` | `True` → adds `has:attachment`. `False` adds nothing (`-has:attachment` is never emitted). |
 | `filename_contains` | `str \| None` | `None` | Structured filter → Gmail `filename:` (server-side coarse narrowing only — see Gmail gotchas). Templated. |
 | `attachment_pattern` | `str \| None` | `None` | `re.search` over the **decoded** filename. `None` → every non-inline attachment matches. **Not templated** (ADR-0005): a bad regex fails at DAG parse. |
-| `lookback_days` | `int` | `7` (S3) / `0` (local) | Sliding `after:` window in calendar days from midnight of the reference day. `0` → today only; `7` → eight calendar days. |
+| `lookback_days` | `int \| str` | `7` (S3) / `0` (local) | Sliding `after:` window in calendar days from midnight of the reference day. `0` → today only; `7` → eight calendar days. Templated. |
 | `mark_processed` | `bool` | `False` | Attach a Gmail label to processed messages (needs `gmail.modify`). Off by default → `gmail.readonly` suffices. |
 | `label_suffix` | `str \| None` | `None` | `None` → label `airflow/processed`; `"avito"` → `airflow/processed/avito`. |
 | `timezone` | `str` | `"Europe/Moscow"` | Zone for the window day, the `dt=` partition, and the manifest `internal_date`. |
@@ -148,7 +148,7 @@ base parameters below and each add a few of their own.
 | `bucket` | `str` | *required* | Target bucket. |
 | `prefix` | `str` | `""` | Base key prefix, e.g. `gmail/avito`. **One prefix = one export** (ADR-0003). Templated. |
 | `aws_conn_id` | `str` | `"aws_default"` | The Amazon/S3 Connection (may point at a custom `endpoint_url`). |
-| `overwrite` | `bool` | `False` | `True` → force re-download; the manifest is not even read. Incompatible with `GmailAttachmentToS3Sensor` (see Limitations). |
+| `overwrite` | `bool \| str` | `False` | `True` → force re-download; the manifest is not even read. Incompatible with `GmailAttachmentToS3Sensor` (see Limitations). Templated — previously accepted any Python value with **no validation**; now strictly validated at runtime. Note: `overwrite` is templated at the **base operator** level (it is inherited `template_fields`, not something added only here). |
 
 **`GmailAttachmentsToLocalOperator` adds:**
 
@@ -156,8 +156,27 @@ base parameters below and each add a few of their own.
 |---|---|---|---|
 | `path` | `str` | *required* | Base directory, e.g. `/data/gmail/avito`. Templated. |
 
-Note: `lookback_days` defaults to `0` here (not `7`), and there is **no public
-`overwrite`** argument — the local operator always overwrites.
+Note: `lookback_days` defaults to `0` here (not `7`). `overwrite` is **not part
+of this class's own `__init__` signature**, but it is still reachable via
+`**kwargs` passed through to the base `__init__` (which does accept it) —
+including, since `overwrite` is inherited `template_fields`, a Jinja string.
+This is an existing gap, not something this provider closes: `_read_manifest()`
+always returns `None` for the local operator, so the resolved value never
+changes behavior here, but an invalid rendered value still raises.
+
+**Templated `lookback_days`/`overwrite` — strict fallback rule.** Both are
+cast/validated at runtime (`execute()`/first `poke()`), the same as
+`date_from`/`date_to`. A rendered value that comes out empty, unset, or the
+literal string `"None"` (the classic `{{ dag_run.conf.get('x') }}` trap when
+the key is missing) raises `ValueError` — it does **not** silently fall back
+to the class default. If you want a default, put it in the Jinja expression
+itself, e.g. `{{ dag_run.conf.get('lookback_days', 7) }}`.
+
+`overwrite` accepts, once rendered: the strings `"true"`/`"false"` (case
+insensitive) or `"1"`/`"0"`, and — under
+`render_template_as_native_obj=True` — the native `bool` or `int` `0`/`1`.
+Anything else raises. Example with a default baked into the expression:
+`overwrite="{{ dag_run.conf.get('overwrite', 'false') }}"`.
 
 ### Sensor parameters and which sensor to use
 
