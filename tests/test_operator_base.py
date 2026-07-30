@@ -646,6 +646,51 @@ def test_execute_renders_invalid_lookback_days_raises():
         _run(op, hook)
 
 
+def test_explicit_range_with_string_lookback_days_still_warns(caplog):
+    # Task 6 (ADR-0009 regression): the WARNING comparison casts BEFORE
+    # comparing against default_lookback_days. If a templated (string)
+    # lookback_days were ever compared as a string against the int default,
+    # "3" != 7 would still warn "by accident" (string vs int always differ),
+    # masking a real bug. Assert the captured LogRecord.args instead of the
+    # formatted message: the %s-formatted text renders 3 and "3" identically,
+    # so only the raw args prove the resolved value is an int, not a string.
+    op = _DictOperator(
+        task_id="t",
+        source="avito",
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
+        date_from="2026-07-01",
+    )
+    render_fields(op, lookback_days="3")
+    hook = _FakeHook([])
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(AirflowSkipException):
+            _run(op, hook)
+    records = [r for r in caplog.records if "lookback_days" in r.getMessage()]
+    assert len(records) == 1
+    assert records[0].args == (3,)  # int 3, not the string "3"
+
+
+def test_explicit_range_with_string_lookback_days_equal_to_default_does_not_warn(
+    caplog,
+):
+    # Mirror case: a templated lookback_days that renders to the STRING form of
+    # the class default ("7" vs default_lookback_days == 7) must NOT warn —
+    # proves the comparison casts before comparing, rather than warning
+    # whenever the rendered value happens to be a str.
+    op = _DictOperator(
+        task_id="t",
+        source="avito",
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
+        date_from="2026-07-01",
+    )
+    render_fields(op, lookback_days="7")
+    hook = _FakeHook([])
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(AirflowSkipException):
+            _run(op, hook)
+    assert not any("lookback_days" in r.message for r in caplog.records)
+
+
 def test_execute_native_rendered_int_lookback_days_builds_expected_window():
     # render_template_as_native_obj=True hands back a real python int (not a
     # string) from dag_run.conf — resolve_lookback_days must accept it as-is,

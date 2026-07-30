@@ -229,6 +229,40 @@ def test_range_override_warning_logged_once_across_pokes(caplog):
 # -- templated lookback_days (ADR-0009) ---------------------------------------
 
 
+def test_explicit_range_with_string_lookback_days_still_warns(caplog):
+    # Task 6 (ADR-0009 regression), sensor side: same cast-before-compare
+    # guard as the operator's mirror test. Assert LogRecord.args (not the
+    # formatted message) to prove the resolved value is an int, not the
+    # rendered string.
+    sensor = _make_sensor(
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
+        date_from="2026-07-01",
+    )
+    render_fields(sensor, lookback_days="3")
+    hook = FakeGmailHook([])
+    with caplog.at_level("WARNING"):
+        _poke(sensor, hook)
+    records = [r for r in caplog.records if "lookback_days" in r.getMessage()]
+    assert len(records) == 1
+    assert records[0].args == (3,)  # int 3, not the string "3"
+
+
+def test_explicit_range_with_string_lookback_days_equal_to_default_does_not_warn(
+    caplog,
+):
+    # Mirror case: templated lookback_days rendering to the STRING form of the
+    # class default ("7") must NOT warn.
+    sensor = _make_sensor(
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
+        date_from="2026-07-01",
+    )
+    render_fields(sensor, lookback_days="7")
+    hook = FakeGmailHook([])
+    with caplog.at_level("WARNING"):
+        _poke(sensor, hook)
+    assert not any("lookback_days" in r.message for r in caplog.records)
+
+
 def test_poke_renders_lookback_days_from_template():
     sensor = _make_sensor(
         lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}"
