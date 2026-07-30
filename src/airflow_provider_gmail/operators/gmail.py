@@ -730,11 +730,20 @@ class GmailAttachmentsToLocalOperator(GmailAttachmentsBaseOperator):
        deletes anything; a downstream task (typically on ``all_done``) must remove
        the files, or the disk fills up.
 
-    There is no user-facing ``overwrite`` argument: local has nothing to overwrite
-    conditionally (``_read_manifest`` is always ``None`` and files are always
-    overwritten). The inherited ``self.overwrite`` attribute stays ``False`` so the
-    base ``execute()`` can reference it uniformly. Each attachment is loaded **fully
-    into memory** before being written (Gmail caps incoming messages at 25 MB).
+    ``overwrite`` is not part of this class's *explicit* ``__init__`` signature —
+    local has nothing to overwrite conditionally (``_read_manifest`` is always
+    ``None``, so every matched message is downloaded and files are always
+    overwritten regardless of ``overwrite``'s value). But it is still **reachable**
+    through ``**kwargs``, forwarded straight into the base ``__init__`` (verified:
+    ``GmailAttachmentsToLocalOperator(..., overwrite=True).overwrite is True``) —
+    including, now that ``overwrite`` is templated on the base class, a Jinja
+    string. This plan does **not** close that gap (out of scope — see ADR-0009);
+    it only documents it accurately. A rendered value that fails
+    ``resolve_overwrite`` (e.g. ``"maybe"``) still raises at ``execute()`` time
+    even though the cast result can never change this class's behavior — the
+    validation is unconditional in the base ``_run()``, upstream of
+    ``_read_manifest`` always returning ``None`` here. Each attachment is loaded
+    **fully into memory** before being written (Gmail caps incoming messages at 25 MB).
     """
 
     #: The local operator's *default* ``lookback_days`` (ADR-0001). Overridden to
@@ -751,11 +760,13 @@ class GmailAttachmentsToLocalOperator(GmailAttachmentsBaseOperator):
         self,
         *,
         path: str,
-        lookback_days: int = 0,
+        lookback_days: int | str = 0,
         **kwargs,
     ) -> None:
-        # No public ``overwrite`` argument: it is fixed at the base default (False)
-        # and never exposed here (see the class docstring).
+        # No public ``overwrite`` parameter in this __init__ signature, but it is
+        # still reachable through **kwargs into the base __init__ (including, now
+        # that overwrite is templated on the base class, a Jinja string) — see the
+        # class docstring for the verified caveat.
         super().__init__(lookback_days=lookback_days, **kwargs)
         self.path = path
 

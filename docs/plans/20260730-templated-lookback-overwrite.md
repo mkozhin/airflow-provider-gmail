@@ -609,9 +609,9 @@ assert record.args == (3,)  # int 3, а не строка "3"
 - Modify: `src/airflow_provider_gmail/operators/gmail.py` (`GmailAttachmentsToLocalOperator`: аннотация `__init__` + докстринг класса + инлайн-комментарий в `__init__`)
 - Modify: `tests/test_operator_local.py`
 
-- [ ] изменить аннотацию `lookback_days: int = 0` в
+- [x] изменить аннотацию `lookback_days: int = 0` в
       `GmailAttachmentsToLocalOperator.__init__` на `int | str = 0`
-- [ ] исправить в докстринге класса утверждение «There is no user-facing
+- [x] исправить в докстринге класса утверждение «There is no user-facing
       `overwrite` argument» на точное, а не желаемое: `overwrite` не входит в
       *явную* сигнатуру `__init__` этого класса, но **всё равно** достижим
       через проброс `**kwargs` в базовый `__init__` (проверено — см. Context) —
@@ -622,7 +622,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
       исключение через `resolve_overwrite`, хотя `_read_manifest()` для этого
       класса всегда возвращает `None`, так что результат каста никогда не
       меняет поведение здесь
-- [ ] исправить **ещё одно** место с той же неточной формулировкой — инлайн-
+- [x] исправить **ещё одно** место с той же неточной формулировкой — инлайн-
       комментарий в `GmailAttachmentsToLocalOperator.__init__`
       (`operators/gmail.py:717-718`): «No public ``overwrite`` argument: it is
       fixed at the base default (False) and never exposed here (see the class
@@ -632,15 +632,15 @@ assert record.args == (3,)  # int 3, а не строка "3"
       прямо опровергнута проверкой выше. Переформулировать в духе
       исправленного докстринга класса, а не оставить это внутреннее
       противоречие
-- [ ] `test_default_lookback_days_is_zero` (строка 146) и
+- [x] `test_default_lookback_days_is_zero` (строка 146) и
       `test_overwrite_attribute_false_but_not_in_public_signature` (строка
       155) проверяют поведение с *дефолтными* аргументами, на что правка
       только аннотации не влияет — убедиться, что оба продолжают проходить
       без изменений, а не редактировать их
-- [ ] добавить тест на рендер (`render_fields`):
+- [x] добавить тест на рендер (`render_fields`):
       `lookback_days="{{ dag_run.conf.get('lookback_days', 0) }}"`, рендер с
       `lookback_days=5` → окно построено на 5 дней
-- [ ] добавить один тест, документирующий проверенный проброс через kwargs —
+- [x] добавить один тест, документирующий проверенный проброс через kwargs —
       через `execute()`/`_run()`, а НЕ прямым вызовом `resolve_overwrite(op.overwrite)`
       (прямой вызов резолвера доказывает только, что сама функция работает, а
       не то, что рантайм локального оператора реально её применяет): создать
@@ -656,7 +656,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
       пробела (со ссылкой на пункт ADR-0009 «не исправлен этим планом» —
       Task 7), чтобы будущая правка, закрывающая этот пробел, не восприняла
       тест как гарантию контракта, которую нельзя менять
-- [ ] прогнать тесты — должны пройти перед task 5a
+- [x] прогнать тесты — должны пройти перед task 5a
 
 ### Task 5a: Базовый сенсор — templated `lookback_days`
 
