@@ -109,9 +109,9 @@ def from_local_iso(value: str) -> datetime:
 
     The inverse of :func:`to_local_iso`: this module owns the ``internal_date``
     format, so it also owns parsing it back. The resolver compares manifests by
-    *moment in time* (``pick="latest"``) and must never compare the ISO strings
-    lexicographically — two equal instants written with different UTC offsets sort
-    wrongly as text.
+    *moment in time* (both ``pick="all"`` and ``pick="latest"``) and must never
+    compare the ISO strings lexicographically — two equal instants written with
+    different UTC offsets sort wrongly as text.
 
     A string **without** a UTC offset (a *naive* timestamp) raises
     :class:`ValueError` right here, at the parse point, rather than slipping
@@ -121,7 +121,7 @@ def from_local_iso(value: str) -> datetime:
 
     This is deliberately *not* wrapped in ``ManifestError`` — that exception is
     strictly about the manifest *schema* (:meth:`Manifest.from_json`), whereas a
-    missing offset is a value problem surfaced only by ``pick="latest"``.
+    missing offset is a value problem surfaced by either ``pick`` mode.
 
     A trailing uppercase ``Z`` (ISO 8601 Zulu = UTC) is normalized to ``+00:00``
     before parsing: the project's floor is ``>=3.10``, but

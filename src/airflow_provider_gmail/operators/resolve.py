@@ -34,16 +34,19 @@ class GmailResolveAttachmentsOperator(BaseOperator):
       operator (``GmailAttachmentsToS3Operator``/``GmailAttachmentsToLocalOperator``);
       typically ``download.output``. A template field, so ``download.output``
       (an XComArg) is rendered before ``execute`` runs.
-    - ``pick`` — ``"all"`` (default; every manifest's attachments, in input order)
-      or ``"latest"`` (attachments of the single most-recent manifest by
-      ``internal_date``). A template field too.
+    - ``pick`` — ``"all"`` (default; every manifest's attachments, sorted
+      chronologically by ``internal_date`` ascending — oldest message first,
+      ADR-0008) or ``"latest"`` (attachments of the single most-recent manifest
+      by ``internal_date``). A template field too.
     - ``aws_conn_id`` — the connection used to read S3 manifests; ignored for a
       purely-local input (the Amazon provider is imported lazily).
 
     ``execute`` returns the flat path list, which Airflow pushes to XCom. An
-    unknown ``pick`` and a broken manifest
-    (:class:`~airflow_provider_gmail.manifest.ManifestError`) both surface up so
-    the task fails loudly rather than emitting a silently-empty result.
+    unknown ``pick``, a broken manifest
+    (:class:`~airflow_provider_gmail.manifest.ManifestError`), and — under
+    ``pick="all"`` or ``pick="latest"`` — a malformed ``internal_date``
+    (:class:`ValueError`) all surface up so the task fails loudly rather than
+    emitting a silently-empty result.
     """
 
     template_fields: Sequence[str] = ("manifests", "pick")

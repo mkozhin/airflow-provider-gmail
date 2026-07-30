@@ -67,3 +67,7 @@ This provider follows the standard layout codified by the **`airflow-pypi-provid
 - `S3Hook.load_bytes(..., replace=True)` is mandatory — the default `replace=False` breaks re-runs.
 - Delivery dedup exists **only in S3 mode** (via `_manifest.json` + `run_id`) and requires the DAG's `max_active_runs=1`.
 - Processed-mail filtering (opt-in `mark_processed`, local operator + Gmail sensor) drops already-labeled mail by comparing the message's `labelIds` against the label ID **in code** (`find_label_id` → `exclude_label_id`) — **not** a `-label:` query term (that relied on undocumented Gmail search behavior and could fail open). It does not affect S3 delivery dedup, which never filters by label.
+- `pick="all"` sorts by `internal_date` ascending (ADR-0008) — a manifest with a
+  malformed/naive `internal_date` now raises `ValueError` on `pick="all"` too
+  (previously only `pick="latest"` read the field), and interleaved duplicates
+  of the same manifest get regrouped by the sort, not preserved in input position.

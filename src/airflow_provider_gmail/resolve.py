@@ -50,18 +50,28 @@ def _resolve(pairs: list[tuple[str, Manifest]], pick: str) -> list[str]:
 
     ``pick``:
 
-    - ``"all"`` (default) — every manifest's attachments, in input order.
-      ``from_local_iso`` is **not** called; ``internal_date`` is never read or
-      validated. Duplicates on input are **not** deduplicated — a duplicate
-      manifest yields duplicate paths (repairing or second-guessing a foreign input
-      is not the resolver's job; the duplication may be intentional).
+    - ``"all"`` (default) — every manifest's attachments, sorted **chronologically**
+      by ``internal_date`` ascending (oldest message first; ADR-0008), compared as
+      an aware :class:`datetime` via :func:`from_local_iso` — never lexicographic
+      on the ISO string. Manifests with equal ``internal_date`` keep their relative
+      input order (Python's ``sorted`` is stable — no explicit secondary key).
+      Duplicates on input are **not** deduplicated — a duplicate manifest yields
+      duplicate paths (repairing or second-guessing a foreign input is not the
+      resolver's job; the duplication may be intentional) — but sorting **can
+      regroup** duplicates that were interleaved with other manifests on input:
+      ``[A, B, A]`` with ``internal_date(A) < internal_date(B)`` becomes
+      ``[A, A, B]``, not the input order ``[A, B, A]``. Files **within** one
+      manifest (``files[]``) are never reordered — only manifests are sorted
+      against each other. A malformed ``internal_date`` now raises
+      :class:`ValueError` from :func:`from_local_iso` (previously ``"all"`` never
+      read ``internal_date`` at all).
     - ``"latest"`` — attachments of the single winning manifest: the maximum
       ``internal_date`` compared as an aware :class:`datetime` (via
-      :func:`from_local_iso`, called **only** here), tie-broken by the larger
-      ``message_id``. A winner whose ``files`` is empty returns ``[]`` **as is**,
-      with no fallback to the next-by-date manifest — a fallback would silently
-      deliver a stale report. A duplicate manifest is merely a repeated candidate:
-      the winner is one manifest and its attachments are returned once.
+      :func:`from_local_iso`, also used by ``"all"`` above), tie-broken by the
+      larger ``message_id``. A winner whose ``files`` is empty returns ``[]``
+      **as is**, with no fallback to the next-by-date manifest — a fallback would
+      silently deliver a stale report. A duplicate manifest is merely a repeated
+      candidate: the winner is one manifest and its attachments are returned once.
 
     An unknown ``pick`` raises :class:`ValueError`.
     """
@@ -71,8 +81,9 @@ def _resolve(pairs: list[tuple[str, Manifest]], pick: str) -> list[str]:
         )
 
     if pick == "all":
+        ordered = sorted(pairs, key=lambda pair: from_local_iso(pair[1].internal_date))
         result: list[str] = []
-        for manifest_path, manifest in pairs:
+        for manifest_path, manifest in ordered:
             result.extend(_attachment_paths(manifest_path, manifest))
         return result
 
@@ -103,6 +114,12 @@ def resolve_attachments(
     ``resolve_attachments([], pick="invalid")`` raises rather than returning ``[]``.
     :func:`_resolve` re-validates it (an internal-seam guard).
 
+    ``pick="all"`` (default) returns every manifest's attachments sorted
+    **chronologically** by ``internal_date`` ascending — oldest message first
+    (ADR-0008), with a stable tie-break (equal ``internal_date`` keeps input
+    order). ``pick="latest"`` returns only the single most-recent manifest's
+    attachments; see :func:`_resolve` for the full contract of both modes.
+
     Reading:
 
     - **S3 URI** (:func:`is_s3_uri` true): the ``(bucket, key)`` is parsed with
@@ -122,7 +139,10 @@ def resolve_attachments(
     surfaces as its natural error with no wrapping and no ``check_for_key``
     pre-check: S3 raises a ``ClientError`` (NoSuchKey / NoSuchBucket / AccessDenied),
     local raises ``FileNotFoundError``. ``ManifestError`` stays strictly about
-    manifest *content*.
+    manifest *content*. Under ``pick="all"``, a manifest with a malformed or
+    naive (offset-less) ``internal_date`` raises :class:`ValueError` from
+    :func:`~airflow_provider_gmail.dates.from_local_iso` while sorting — the same
+    error ``pick="latest"`` has always been able to raise.
 
     An empty ``manifests`` list yields ``[]``. ``None`` is **not** masked — there
     is deliberately no ``if not manifests`` short-circuit (it would swallow a

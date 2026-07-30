@@ -245,3 +245,17 @@ def test_manifest_error_propagates(fake_s3, caplog):
     # on error" independently of the INFO scope; the ExecutorSafeguard WARNING's
     # message differs, so it never trips this).
     assert not [r for r in caplog.records if r.getMessage().startswith("Resolved ")]
+
+
+def test_malformed_internal_date_propagates_value_error_under_pick_all(fake_s3, caplog):
+    # pick="all" now sorts by internal_date (ADR-0008), so a naive/malformed
+    # timestamp raises ValueError from from_local_iso through the operator too —
+    # not just at the resolve_attachments()/_resolve() core (see test_resolve.py).
+    manifest = _mk("MSG", "2026-07-10T09:00:00", [_s3_key("MSG", "report.xlsx")])
+    uri = _put(fake_s3, "MSG", manifest)
+    op = GmailResolveAttachmentsOperator(task_id="resolve", manifests=[uri], pick="all")
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(ValueError):
+            op.execute(context={})
+    assert _op_messages(op, caplog) == []
+    assert not [r for r in caplog.records if r.getMessage().startswith("Resolved ")]

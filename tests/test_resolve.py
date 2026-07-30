@@ -77,17 +77,87 @@ def test_s3_manifest_reanchors_keys_to_bucket():
     ]
 
 
-def test_all_flattens_in_input_order():
-    m1 = _mk("A", "2026-07-10T09:00:00+03:00", [_s3_key("A", "a1.xlsx"),
-                                                _s3_key("A", "a2.xlsx")])
-    m2 = _mk("B", "2026-07-10T10:00:00+03:00", [_s3_key("B", "b1.xlsx")])
+def test_all_sorts_chronologically_not_lexicographically():
+    # Input order is B, A, C. As UTC instants: B(11:00+03:00 = 08:00Z) <
+    # A(09:00+00:00 = 09:00Z), and C(09:00+03:00 = 06:00Z) is earliest of all —
+    # chronological order is C, B, A. Lexicographically the ISO text instead
+    # sorts A, C, B ("09:00:00+00" < "09:00:00+03" < "11:00:00+03") — a
+    # different (wrong) result, so this pins sorting by actual moment in time,
+    # not ISO text — mirrors test_latest_uses_instant_not_lexicographic_order.
+    m_b = _mk("B", "2026-07-10T11:00:00+03:00", [_s3_key("B", "b1.xlsx")])
+    m_a = _mk("A", "2026-07-10T09:00:00+00:00", [_s3_key("A", "a1.xlsx"),
+                                                  _s3_key("A", "a2.xlsx")])
+    m_c = _mk("C", "2026-07-10T09:00:00+03:00", [_s3_key("C", "c1.xlsx")])
     result = _resolve(
-        [(_s3_manifest_path("A"), m1), (_s3_manifest_path("B"), m2)], "all"
+        [
+            (_s3_manifest_path("B"), m_b),
+            (_s3_manifest_path("A"), m_a),
+            (_s3_manifest_path("C"), m_c),
+        ],
+        "all",
     )
     assert result == [
+        f"s3://{BUCKET}/{_s3_key('C', 'c1.xlsx')}",
+        f"s3://{BUCKET}/{_s3_key('B', 'b1.xlsx')}",
         f"s3://{BUCKET}/{_s3_key('A', 'a1.xlsx')}",
         f"s3://{BUCKET}/{_s3_key('A', 'a2.xlsx')}",
-        f"s3://{BUCKET}/{_s3_key('B', 'b1.xlsx')}",
+    ]
+
+
+def test_all_stable_tie_break_keeps_input_order_on_equal_internal_date():
+    # Two DIFFERENT manifests sharing the same internal_date: relative input
+    # order is preserved (Python's sorted() is stable) — checked on both
+    # permutations of the input.
+    m_x = _mk("X", "2026-07-10T09:00:00+03:00", [_s3_key("X", "x.xlsx")])
+    m_y = _mk("Y", "2026-07-10T09:00:00+03:00", [_s3_key("Y", "y.xlsx")])
+
+    result_xy = _resolve(
+        [(_s3_manifest_path("X"), m_x), (_s3_manifest_path("Y"), m_y)], "all"
+    )
+    assert result_xy == [
+        f"s3://{BUCKET}/{_s3_key('X', 'x.xlsx')}",
+        f"s3://{BUCKET}/{_s3_key('Y', 'y.xlsx')}",
+    ]
+
+    result_yx = _resolve(
+        [(_s3_manifest_path("Y"), m_y), (_s3_manifest_path("X"), m_x)], "all"
+    )
+    assert result_yx == [
+        f"s3://{BUCKET}/{_s3_key('Y', 'y.xlsx')}",
+        f"s3://{BUCKET}/{_s3_key('X', 'x.xlsx')}",
+    ]
+
+
+def test_all_does_not_reorder_files_within_one_manifest():
+    # Sorting applies only between manifests — files[] order within a single
+    # manifest is preserved verbatim.
+    manifest = _mk(
+        "MSG",
+        "2026-07-10T09:00:00+03:00",
+        [_s3_key("MSG", "z.xlsx"), _s3_key("MSG", "a.xlsx"), _s3_key("MSG", "m.xlsx")],
+    )
+    result = _resolve([(_s3_manifest_path("MSG"), manifest)], "all")
+    assert result == [
+        f"s3://{BUCKET}/{_s3_key('MSG', 'z.xlsx')}",
+        f"s3://{BUCKET}/{_s3_key('MSG', 'a.xlsx')}",
+        f"s3://{BUCKET}/{_s3_key('MSG', 'm.xlsx')}",
+    ]
+
+
+def test_all_regroups_interleaved_duplicates_by_date():
+    # New observable side effect of sorting: interleaved duplicates of the same
+    # manifest used to keep their input positions ([A, B, A] -> [A, B, A]); now
+    # sorting by internal_date groups them ([A, B, A] -> [A, A, B]) when
+    # internal_date(A) < internal_date(B).
+    m_a = _mk("A", "2026-07-10T09:00:00+03:00", [_s3_key("A", "a.xlsx")])
+    m_b = _mk("B", "2026-07-10T10:00:00+03:00", [_s3_key("B", "b.xlsx")])
+    pair_a = (_s3_manifest_path("A"), m_a)
+    pair_b = (_s3_manifest_path("B"), m_b)
+    result = _resolve([pair_a, pair_b, pair_a], "all")
+    assert result == [
+        f"s3://{BUCKET}/{_s3_key('A', 'a.xlsx')}",
+        f"s3://{BUCKET}/{_s3_key('A', 'a.xlsx')}",
+        f"s3://{BUCKET}/{_s3_key('B', 'b.xlsx')}",
     ]
 
 
@@ -136,7 +206,7 @@ def test_all_empty_pairs_returns_empty():
     assert _resolve([], "all") == []
 
 
-# -- internal_date validation only touched by "latest" ------------------------
+# -- internal_date validation: both "all" and "latest" now read it ------------
 
 
 @pytest.mark.parametrize("bad_date", ["2026-07-10T09:00:00", "not-a-date", ""])
@@ -147,12 +217,12 @@ def test_latest_raises_on_naive_or_malformed_date(bad_date):
 
 
 @pytest.mark.parametrize("bad_date", ["2026-07-10T09:00:00", "not-a-date", ""])
-def test_all_ignores_internal_date(bad_date):
-    # "all" never reads internal_date, so an invalid one does not raise.
+def test_all_raises_on_naive_or_malformed_date(bad_date):
+    # New behavior: "all" now sorts by internal_date, so a naive or malformed
+    # one raises ValueError from from_local_iso — symmetric with "latest".
     manifest = _mk("MSG", bad_date, [_s3_key("MSG", "x.xlsx")])
-    assert _resolve([(_s3_manifest_path("MSG"), manifest)], "all") == [
-        f"s3://{BUCKET}/{_s3_key('MSG', 'x.xlsx')}"
-    ]
+    with pytest.raises(ValueError):
+        _resolve([(_s3_manifest_path("MSG"), manifest)], "all")
 
 
 # -- duplicates are neither deduplicated nor validated ------------------------
@@ -385,6 +455,17 @@ def test_missing_local_manifest_raises_file_not_found(fake_s3, tmp_path):
         resolve_attachments([str(missing)], "all")
 
 
+def test_all_raises_value_error_on_malformed_internal_date_through_public_edge(
+    fake_s3,
+):
+    # Pins the new ValueError failure mode at the resolve_attachments() facade,
+    # not just on the pure _resolve() core.
+    manifest = _mk("MSG", "not-a-date", [_s3_key("MSG", "x.xlsx")])
+    uri = _put(fake_s3, "MSG", manifest)
+    with pytest.raises(ValueError):
+        resolve_attachments([uri], "all")
+
+
 # -- empty / None inputs ------------------------------------------------------
 
 
@@ -443,7 +524,10 @@ def test_mixed_s3_and_local_manifests_resolve_in_one_call(fake_s3, tmp_path):
     local_path = tmp_path / "_manifest.json"
     local_path.write_bytes(m_local.to_json())
 
-    result = resolve_attachments([u_a, str(local_path), u_b], "all")
+    # Input order is reversed (B, local, A) relative to the chronological order
+    # below — pins the sort guarantee at the public resolve_attachments() edge,
+    # not just on the pure _resolve() core.
+    result = resolve_attachments([u_b, str(local_path), u_a], "all")
 
     assert result == [
         f"s3://{BUCKET}/{_s3_key('A', 'a.xlsx')}",
