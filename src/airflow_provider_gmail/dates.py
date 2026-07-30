@@ -1,10 +1,12 @@
-"""Pure date/time helpers shared by the operators and the sensors.
+"""Pure date/time and templated-value helpers shared by the operators and the sensors.
 
 This module is deliberately *neutral*: no Airflow, no S3, no Gmail imports — only
 ``datetime``/``zoneinfo`` and string parsing. It lives here (rather than inside
 ``operators/gmail.py``) so the sensors can reuse :func:`parse_date_range` and
-:func:`to_local_date` without importing the operator module — the sensor→operator
-coupling that would otherwise exist purely to share two pure functions.
+:func:`to_local_date` without importing the operator module, and so both the
+operators and the sensors can reuse :func:`resolve_lookback_days` (and the
+operators reuse :func:`resolve_overwrite`) — the sensor→operator coupling that
+would otherwise exist purely to share these pure functions.
 
 - :func:`parse_date_range` — parse/validate the ``date_from``/``date_to`` range;
 - :func:`to_local_date` / :func:`to_local_iso` — the ``dt=`` partition date and
@@ -13,6 +15,10 @@ coupling that would otherwise exist purely to share two pure functions.
 - :func:`from_local_iso` — the inverse of :func:`to_local_iso`: parse a manifest
   ``internal_date`` string back into an aware :class:`datetime` for chronological
   comparison. Owned here because this module owns the ``internal_date`` format.
+- :func:`resolve_lookback_days` / :func:`resolve_overwrite` — cast a templated
+  ``lookback_days``/``overwrite`` value (rendered from ``dag_run.conf``/Jinja,
+  or passed as a plain Python literal) to its runtime type, applying a strict
+  fallback policy rather than a silent default.
 """
 
 from __future__ import annotations
@@ -66,6 +72,81 @@ def validate_lookback_days(lookback_days: int) -> None:
         raise ValueError(
             f"lookback_days must be >= 0 (0 means 'today only'), got {lookback_days}"
         )
+
+
+def resolve_lookback_days(value: int | str | None) -> int:
+    """Cast a templated (or plain) ``lookback_days`` value to a validated ``int``.
+
+    Called at runtime (``execute()``/``poke()``), *after* Jinja rendering, so it
+    handles both a plain Python ``int`` literal and a rendered template string
+    the same way — unlike :func:`validate_lookback_days`, which only checked an
+    already-``int`` value at ``__init__`` time.
+
+    The fallback is strict: there is no silent default. A rendered empty
+    string, ``"None"`` (the classic ``{{ dag_run.conf.get('x') }}`` trap when
+    the key is missing), or a native ``None`` (the same trap under
+    ``render_template_as_native_obj=True``) all raise :class:`ValueError`
+    rather than falling back to the class default — the DAG author is
+    responsible for a default *inside* the Jinja expression itself (e.g.
+    ``{{ dag_run.conf.get('lookback_days', 7) }}``).
+    """
+    if isinstance(value, bool):
+        # int(True) == 1 would otherwise silently turn a native-Jinja-rendered
+        # `true` (render_template_as_native_obj=True) into a 1-day window.
+        raise ValueError(
+            f"lookback_days must be an integer, got {value!r} "
+            "(check the DAG's Jinja expression renders a number, not a boolean)"
+        )
+    if isinstance(value, float):
+        # int(1.9) == 1 would otherwise silently narrow the window instead of
+        # rejecting a fractional day count; native Jinja rendering
+        # (render_template_as_native_obj=True) can hand back a float from an
+        # arithmetic expression in dag_run.conf.
+        raise ValueError(
+            f"lookback_days must be an integer, got {value!r} "
+            "(a fractional value is not a valid number of days)"
+        )
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"lookback_days must be an integer, got {value!r} "
+            "(check the DAG's Jinja expression renders a number)"
+        ) from exc
+    if parsed < 0:
+        raise ValueError(f"lookback_days must be >= 0 (0 means 'today only'), got {parsed}")
+    return parsed
+
+
+def resolve_overwrite(value: bool | str | int | None) -> bool:
+    """Cast a templated (or plain) ``overwrite`` value to a validated ``bool``.
+
+    Called at runtime (``execute()``), *after* Jinja rendering. ``overwrite``
+    was previously never validated at all when passed as a Python literal —
+    this is a deliberate tightening of behavior, not a side effect of adding
+    templating (see ADR-0009).
+
+    The fallback is strict, matching :func:`resolve_lookback_days`: a rendered
+    empty string, ``"None"``, or a native ``None`` all raise
+    :class:`ValueError` rather than silently resolving to ``False``.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        low = value.strip().lower()
+        if low in ("true", "1"):
+            return True
+        if low in ("false", "0"):
+            return False
+    elif isinstance(value, int):
+        # Covers native Jinja rendering (render_template_as_native_obj=True),
+        # where a conf value of 0/1 arrives as a real int, not "0"/"1".
+        if value in (0, 1):
+            return bool(value)
+    raise ValueError(
+        f"overwrite must render to true/false, got {value!r} "
+        "(check the DAG's Jinja expression)"
+    )
 
 
 def validate_timezone(timezone: str) -> None:

@@ -442,15 +442,15 @@ assert record.args == (3,)  # int 3, а не строка "3"
 - Modify: `src/airflow_provider_gmail/dates.py`
 - Modify: `tests/test_dates.py`
 
-- [ ] добавить `resolve_lookback_days(value: int | str | None) -> int` по Technical Details
-- [ ] добавить `resolve_overwrite(value: bool | str | int | None) -> bool` по
+- [x] добавить `resolve_lookback_days(value: int | str | None) -> int` по Technical Details
+- [x] добавить `resolve_overwrite(value: bool | str | int | None) -> bool` по
       Technical Details (`bool` проверяется до `int`, поскольку `bool` —
       подкласс `int`)
-- [ ] **пока оставить `validate_lookback_days` на месте** — не удалять её в
+- [x] **пока оставить `validate_lookback_days` на месте** — не удалять её в
       этой задаче (см. ограничение по порядку в Context); у неё ещё два живых
       вызывающих (`operators/gmail.py`, `sensors/gmail.py`), пока не выполнены
       Task 2 и Task 5a, и удаление здесь сломает сбор тестов для всего набора
-- [ ] обновить докстринг модуля в двух местах, не только в одном: открывающая
+- [x] обновить докстринг модуля в двух местах, не только в одном: открывающая
       фраза «Pure date/time helpers shared by the operators and the sensors»
       тоже становится неточной, поскольку `resolve_overwrite` — это не
       дата/время, а политика приведения типа; переформулировать её вместе с
@@ -461,11 +461,11 @@ assert record.args == (3,)  # int 3, а не строка "3"
       идущий следом список-перечисление хелперов модуля (`parse_date_range`,
       `to_local_date`/`to_local_iso`, `from_local_iso`) — иначе переформулировка
       без правки списка будет выглядеть недоделанной
-- [ ] обновить докстринг `tests/test_dates.py` (сейчас — «Tests for
+- [x] обновить докстринг `tests/test_dates.py` (сейчас — «Tests for
       :func:`...dates.from_local_iso`», т.е. привязан к одной функции) так,
       чтобы отражать, что модуль тестирует несколько независимых хелперов
       `dates.py`, а не только `from_local_iso`
-- [ ] написать тесты для `resolve_lookback_days` в `tests/test_dates.py`:
+- [x] написать тесты для `resolve_lookback_days` в `tests/test_dates.py`:
       строка `"14"` → `14`, нативный `int` проходит насквозь, отрицательное →
       `ValueError`, нативный `bool` (`True`/`False`) → `ValueError` (иначе
       `int(True) == 1` тихо превратил бы нативно отрендеренный `true` в
@@ -478,12 +478,12 @@ assert record.args == (3,)  # int 3, а не строка "3"
       упоминающим Jinja-выражение (нативный `None` важен, потому что
       `{{ dag_run.conf.get('x') }}` даёт python `None` напрямую при
       `render_template_as_native_obj=True`, а не только строку `"None"`)
-- [ ] написать тесты для `resolve_overwrite` в `tests/test_dates.py`:
+- [x] написать тесты для `resolve_overwrite` в `tests/test_dates.py`:
       `"true"`/`"True"`/`"1"` → `True`, `"false"`/`"0"` → `False`, нативный
       `bool` проходит насквозь (и `True`, и `False`), нативный `int` `1` →
       `True`, нативный `int` `0` → `False`, нативный `int` `2` → `ValueError`,
       `""`/`"None"`/нативный `None`/`"yes"`/мусор → `ValueError`
-- [ ] прогнать тесты — должны пройти перед task 2
+- [x] прогнать тесты — должны пройти перед task 2
 
 ### Task 2: Базовый оператор — templated `lookback_days` + `overwrite`
 
