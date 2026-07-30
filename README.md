@@ -354,7 +354,8 @@ Two faces, same logic:
 
 `pick` selects which messages contribute attachments:
 
-- **`"all"`** (default) — every manifest's attachments, in input order.
+- **`"all"`** (default) — every manifest's attachments, sorted chronologically by
+  `internal_date` (oldest message first; ties broken by input order) (ADR-0008).
 - **`"latest"`** — only the attachments of the single most-recent manifest by
   `internal_date` (compared as aware moments, tie-broken by `message_id`). Use it
   when the same report may arrive more than once and you want only the newest.
@@ -372,13 +373,17 @@ download >> resolve >> parse
 ```
 
 The resolver does **not** repair or second-guess its input: duplicate manifests
-pass through as given, and a **missing** manifest (a good path but no object —
-deleted, retention, or an `aws_conn_id` pointing at the wrong store) or a
-**broken** one raises loudly (the storage error / `ManifestError`) rather than
-silently yielding a short list. An empty input list yields an empty list; `None`
-(e.g. an `xcom_pull` on the wrong `task_id`) raises `TypeError` rather than a
-forever-green empty pipeline. A purely-local input never imports the Amazon
-provider (the `s3` extra is not required).
+pass through as given (same count, but under `pick="all"` the chronological sort
+may **regroup** duplicates that were interleaved in the input — a fresh copy of
+the count, not a preserved position), and a **missing** manifest (a good path
+but no object — deleted, retention, or an `aws_conn_id` pointing at the wrong
+store) or a **broken** one raises loudly (the storage error / `ManifestError`)
+rather than silently yielding a short list. Under `pick="all"`, a manifest with
+a malformed `internal_date` (naive, or unparseable) raises `ValueError` from the
+sort. An empty input list yields an empty list; `None` (e.g. an `xcom_pull` on
+the wrong `task_id`) raises `TypeError` rather than a forever-green empty
+pipeline. A purely-local input never imports the Amazon provider (the `s3`
+extra is not required).
 
 ## Example DAGs
 

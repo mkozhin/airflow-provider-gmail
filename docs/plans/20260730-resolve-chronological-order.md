@@ -360,33 +360,33 @@
 - Modify: `CONTEXT.md`
 - Modify: `example_dags/example_gmail_to_s3.py`
 
-- [ ] Прогнать `pytest tests/test_operator_resolve.py` целиком — убедиться, что
+- [x] Прогнать `pytest tests/test_operator_resolve.py` целиком — убедиться, что
       ничего не ломается; если что-то падает — поправить ожидания теста
-- [ ] **Перевернуть входной порядок** в `test_logs_summary_and_each_path`
+- [x] **Перевернуть входной порядок** в `test_logs_summary_and_each_path`
       (`tests/test_operator_resolve.py:148-169`, найдено `planning:plan-review`)
       на `manifests=[uri2, uri1]`, сохранив ожидаемый хронологический
       порядок путей в логе/XCom — пинит новую гарантию на уровне
       оператора/XCom/лога, не только чистого `_resolve()`
-- [ ] `README.md:357` — заменить "in input order" на описание хронологической
+- [x] `README.md:357` — заменить "in input order" на описание хронологической
       сортировки по `internal_date` (по возрастанию), процитировать `(ADR-0008)`
-- [ ] `README.md:374-381` — дополнить абзац про поведение резолвера на ошибках
+- [x] `README.md:374-381` — дополнить абзац про поведение резолвера на ошибках
       новым источником `ValueError` (битый `internal_date` под `pick="all"`)
       **и** уточнить фразу "duplicate manifests pass through as given" —
       дубликаты сохраняются по количеству, но теперь могут быть
       перегруппированы сортировкой (уточнено третьим раундом codex-ревью)
-- [ ] `README_RU.md:351` (+ `(ADR-0008)`) и `README_RU.md:369-375` —
+- [x] `README_RU.md:351` (+ `(ADR-0008)`) и `README_RU.md:369-375` —
       синхронные правки на русском (формулировка порядка + новый `ValueError`
       + уточнение про перегруппировку дублей, симметрично README.md)
-- [ ] `CONTEXT.md:74-75` (канонический глоссарий термина `pick`) — та же правка
+- [x] `CONTEXT.md:74-75` (канонический глоссарий термина `pick`) — та же правка
       формулировки порядка + `(ADR-0008)`, синхронно с README/README_RU
-- [ ] **`CONTEXT.md:71-73`** (отдельная запись — глоссарий `resolve_attachments`,
+- [x] **`CONTEXT.md:71-73`** (отдельная запись — глоссарий `resolve_attachments`,
       **не** запись `pick` выше; найдено третьим раундом codex-ревью) — фраза
       "дубликаты проходят как есть" тоже требует уточнения про перегруппировку
       сортировкой, симметрично README.md:374-381
-- [ ] `example_dags/example_gmail_to_s3.py:120-121` — поправить комментарий
+- [x] `example_dags/example_gmail_to_s3.py:120-121` — поправить комментарий
       про `pick="all"` в примере DAG (найдено codex-ревью — был пропущен в
       первой версии плана)
-- [ ] Запустить `pytest tests/test_operator_resolve.py` — зелёный перед Task 3
+- [x] Запустить `pytest tests/test_operator_resolve.py` — зелёный перед Task 3
 
 ### Task 3: ADR-0008 — хронологическая сортировка `pick="all"`
 

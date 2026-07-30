@@ -151,7 +151,7 @@ def test_logs_summary_and_each_path(fake_s3, caplog):
     uri1 = _put(fake_s3, "MSG1", m1)
     uri2 = _put(fake_s3, "MSG2", m2)
     op = GmailResolveAttachmentsOperator(
-        task_id="resolve", manifests=[uri1, uri2], pick="all"
+        task_id="resolve", manifests=[uri2, uri1], pick="all"
     )
     with caplog.at_level(logging.INFO):
         result = op.execute(context={})

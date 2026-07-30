@@ -117,7 +117,8 @@ def example_gmail_to_s3():
         # flat list of full attachment URIs. A template field, so the XComArg is
         # rendered before execute runs.
         manifests=download.output,
-        # pick="all" (the default): every message's attachments, in input order.
+        # pick="all" (the default): every message's attachments, sorted
+        # chronologically by internal_date (oldest message first).
         # Use pick="latest" to keep only the attachments of the single most-recent
         # message (by internal_date) when the same report arrives more than once.
         pick="all",
