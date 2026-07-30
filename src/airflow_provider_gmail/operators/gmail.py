@@ -39,9 +39,10 @@ from airflow.models import BaseOperator
 # canonical home is ``airflow_provider_gmail.dates`` (see module docstring).
 from airflow_provider_gmail.dates import (
     parse_date_range,
+    resolve_lookback_days,
+    resolve_overwrite,
     to_local_date,
     to_local_iso,
-    validate_lookback_days,
     validate_timezone,
 )
 from airflow_provider_gmail.hooks.gmail import GmailHook, resolve_label_name
@@ -140,6 +141,20 @@ class GmailAttachmentsBaseOperator(BaseOperator):
     the reverse of ``attachment_pattern``, which is compiled here so a bad regex
     fails at DAG-parse time and is intentionally **not** templated (ADR-0005).
 
+    ``lookback_days`` and ``overwrite`` are likewise **templated** (ADR-0009):
+    cast/validated in :meth:`_run` after rendering, via
+    :func:`~airflow_provider_gmail.dates.resolve_lookback_days` /
+    :func:`~airflow_provider_gmail.dates.resolve_overwrite`, the same pattern as
+    ``date_from``/``date_to``. The fallback is strict — a rendered empty
+    string, ``"None"``, or a native ``None`` raises :class:`ValueError` rather
+    than silently falling back to the class default; the DAG author is
+    responsible for a default *inside* the Jinja expression itself (e.g.
+    ``{{ dag_run.conf.get('lookback_days', 7) }}``). A plain Python literal
+    (no Jinja) still works exactly as before for a *valid* value; an invalid
+    literal (e.g. ``lookback_days=-1``) now fails at ``execute()``/the first
+    ``poke()`` instead of at ``__init__`` (DAG-parse time), because the same
+    runtime path now serves both the literal and the template.
+
     The default ``lookback_days`` is ``7``; the local operator overrides it to
     ``0`` (Task 10, ADR-0001).
     """
@@ -158,6 +173,8 @@ class GmailAttachmentsBaseOperator(BaseOperator):
         "filename_contains",
         "date_from",
         "date_to",
+        "lookback_days",
+        "overwrite",
     )
 
     def __init__(
@@ -171,20 +188,22 @@ class GmailAttachmentsBaseOperator(BaseOperator):
         has_attachment: bool = False,
         filename_contains: str | None = None,
         attachment_pattern: str | None = None,
-        lookback_days: int = 7,
+        lookback_days: int | str = 7,
         mark_processed: bool = False,
         label_suffix: str | None = None,
         timezone: str = "Europe/Moscow",
-        overwrite: bool = False,
+        overwrite: bool | str = False,
         date_from: str | None = None,
         date_to: str | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
 
-        # Reject negative lookback and an unknown timezone eagerly so bad config
-        # fails at DAG parse, not deep inside a run (shared with the sensor).
-        validate_lookback_days(lookback_days)
+        # Reject an unknown timezone eagerly so a typo fails at DAG parse, not
+        # deep inside a run (shared with the sensor). ``lookback_days`` is
+        # templated (ADR-0009): it is cast/validated at runtime in ``_run``,
+        # after rendering — not here — because it must accept a rendered
+        # template string the same way it accepts a plain literal.
         validate_timezone(timezone)
 
         # Compile the pattern in __init__ so a bad regex fails at DAG parse
@@ -348,9 +367,18 @@ class GmailAttachmentsBaseOperator(BaseOperator):
         ref_day = context["data_interval_end"]
         label_name = resolve_label_name(self.label_suffix)
 
+        # Cast/validate the templated lookback_days/overwrite here, right after
+        # rendering, so the same code path handles both a plain literal and a
+        # rendered Jinja string (ADR-0009). Unconditional even in explicit-range
+        # mode, where Window.resolve below ends up ignoring lookback_days — a
+        # garbage-rendered value still fails fast rather than being silently
+        # skipped (documented trade-off, see ADR-0009).
+        lookback_days = resolve_lookback_days(self.lookback_days)
+        overwrite = resolve_overwrite(self.overwrite)
+
         date_from, date_to = parse_date_range(self.date_from, self.date_to)
         if (date_from is not None or date_to is not None) and (
-            self.lookback_days != self.default_lookback_days
+            lookback_days != self.default_lookback_days
         ):
             # This resolve site owns the WARNING (ADR-0004): once the Window is
             # built the hook no longer knows the original lookback_days nor
@@ -358,11 +386,11 @@ class GmailAttachmentsBaseOperator(BaseOperator):
             self.log.warning(
                 "An explicit date_from/date_to range was given; the non-default "
                 "lookback_days=%s is ignored.",
-                self.lookback_days,
+                lookback_days,
             )
 
         window = Window.resolve(
-            ref_day, self.timezone, self.lookback_days, date_from, date_to
+            ref_day, self.timezone, lookback_days, date_from, date_to
         )
         query = self.hook.build_query(
             window,
@@ -407,8 +435,8 @@ class GmailAttachmentsBaseOperator(BaseOperator):
             # overwrite=True → do not read the manifest at all: a corrupt manifest
             # must not raise ManifestError during the forced re-download that
             # overwrite exists for (ADR-0001).
-            manifest = None if self.overwrite else self._read_manifest(rel_dir)
-            decision = decide(manifest, run_id, self.overwrite)
+            manifest = None if overwrite else self._read_manifest(rel_dir)
+            decision = decide(manifest, run_id, overwrite)
             # Label catch-up is orthogonal to Decision — always append.
             to_label.append(msg.message_id)
 

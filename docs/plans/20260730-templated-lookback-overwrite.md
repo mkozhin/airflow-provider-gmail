@@ -492,51 +492,51 @@ assert record.args == (3,)  # int 3, а не строка "3"
 - Modify: `src/airflow_provider_gmail/operators/gmail.py`
 - Modify: `tests/test_operator_base.py`
 
-- [ ] в `operators/gmail.py` заменить импорт `validate_lookback_days` на импорт
+- [x] в `operators/gmail.py` заменить импорт `validate_lookback_days` на импорт
       `resolve_lookback_days`, `resolve_overwrite` из
       `airflow_provider_gmail.dates` — импорт `validate_lookback_days` в этом
       файле можно убрать сразу, поскольку её вызов в `__init__` убирается
       следующим пунктом; сама функция остаётся определена в `dates.py`, пока
       Task 5a не уберёт отдельный (пока ещё живой) импорт сенсора, и Task 5b
       не удалит саму функцию; `validate_timezone` оставить как есть
-- [ ] добавить `"lookback_days"`, `"overwrite"` в
+- [x] добавить `"lookback_days"`, `"overwrite"` в
       `GmailAttachmentsBaseOperator.template_fields`
-- [ ] изменить аннотации `__init__` на `lookback_days: int | str = 7`,
+- [x] изменить аннотации `__init__` на `lookback_days: int | str = 7`,
       `overwrite: bool | str = False`; убрать вызов
       `validate_lookback_days(lookback_days)` из `__init__`; присваивание
       оставить как есть (`self.lookback_days = lookback_days`,
       `self.overwrite = overwrite`)
-- [ ] исправить ставший наполовину ложным инлайн-комментарий на
+- [x] исправить ставший наполовину ложным инлайн-комментарий на
       `operators/gmail.py:185-186` («Reject negative lookback ... fails at DAG
       parse») — верна только половина про timezone; переформулировать так,
       чтобы отражать, что `lookback_days` теперь валидируется в рантайме
-- [ ] в `_run()`: добавить `lookback_days = resolve_lookback_days(self.lookback_days)`
+- [x] в `_run()`: добавить `lookback_days = resolve_lookback_days(self.lookback_days)`
       и `overwrite = resolve_overwrite(self.overwrite)` в начале (после
       `run_id`/`ref_day`), заменить все последующие обращения к
       `self.lookback_days`/`self.overwrite` в методе (сравнение для WARNING,
       `Window.resolve(...)`, строку `manifest = None if ...`,
       `decide(manifest, run_id, ...)`) на локальные переменные
-- [ ] обновить докстринг класса: `lookback_days`/`overwrite` теперь templated и
+- [x] обновить докстринг класса: `lookback_days`/`overwrite` теперь templated и
       парсятся в рантайме, по аналогии с `date_from`/`date_to` (докстринга у
       `__init__` сегодня нет — контракт параметров живёт в докстринге класса и
       README, это покрыто в Task 9)
-- [ ] создать `tests/conftest.py` с общим хелпером `render_fields(op, **conf)`
+- [x] создать `tests/conftest.py` с общим хелпером `render_fields(op, **conf)`
       по Technical Details — без конструирования `DAG`/`DagBag`
-- [ ] обновить `test_template_fields_expected_set`, чтобы требовать наличие
+- [x] обновить `test_template_fields_expected_set`, чтобы требовать наличие
       `lookback_days` и `overwrite` в
       `GmailAttachmentsBaseOperator.template_fields` (этот тест уже использует
       subset-проверку — менять посылку не нужно)
-- [ ] заменить `test_init_negative_lookback_days_raises` (сейчас проверяет
+- [x] заменить `test_init_negative_lookback_days_raises` (сейчас проверяет
       исключение в момент `__init__`) на тест на исключение в рантайме:
       создать оператор с `lookback_days=-1`, убедиться, что `__init__` **не**
       падает, затем убедиться, что `execute()`/`_run()` падает с `ValueError`
-- [ ] добавить тест на рендер с помощью `render_fields`:
+- [x] добавить тест на рендер с помощью `render_fields`:
       `lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}"`, рендер с
       `lookback_days=14`, затем `execute()`/`_run()` и проверка, что итоговое
       окно `Window` использовало 14 дней
-- [ ] добавить негативный тест на рендер: та же настройка со значением conf
+- [x] добавить негативный тест на рендер: та же настройка со значением conf
       `-1`, убедиться, что `execute()` падает с `ValueError` (не проглатывается)
-- [ ] добавить один сквозной тест на **нативный** рендеринг
+- [x] добавить один сквозной тест на **нативный** рендеринг
       (`render_template_as_native_obj=True`): создать реальный `DAG(...,
       render_template_as_native_obj=True)`, привязать к нему оператор с
       `lookback_days` из шаблона (например, `"{{ dag_run.conf['lookback_days'] }}"`),
@@ -547,16 +547,16 @@ assert record.args == (3,)  # int 3, а не строка "3"
       нативно отрендеренный `int`/`bool` действительно доходит до
       `self.lookback_days`/`self.overwrite` через реальный `render_template_fields()`,
       а не только что резолверы умеют такие типы принимать
-- [ ] обновить докстринг модуля `tests/test_operator_base.py` (сейчас:
+- [x] обновить докстринг модуля `tests/test_operator_base.py` (сейчас:
       «...the `template_fields` set and `__init__` validation») — валидация
       `lookback_days` для этого файла больше не `__init__`-валидация, а
       рантайм-каст; переформулировать, не переписывая остальное
-- [ ] **не** менять `test_execute_nondefault_lookback_with_range_warns` (строка
+- [x] **не** менять `test_execute_nondefault_lookback_with_range_warns` (строка
       580) и `test_execute_default_lookback_with_range_does_not_warn` (строка
       591) в этой задаче — оба уже проходят с обычным `int`/без аргумента
       `lookback_days` и остаются такими; строковая версия этой регрессии — в
       исключительном владении Task 6, здесь не дублируется
-- [ ] прогнать тесты — должны пройти перед task 3
+- [x] прогнать тесты — должны пройти перед task 3
 
 ### Task 3: S3-оператор — покрытие рендера шаблона для `overwrite`
 
