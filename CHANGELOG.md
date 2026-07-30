@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **BREAKING: `pick="all"` now returns attachments sorted by ascending
+  `internal_date`, not input order.** `resolve_attachments(manifests,
+  pick="all")` / `GmailResolveAttachmentsOperator` previously flattened
+  attachments in the order `manifests` was given (an artifact of Gmail
+  `messages.list`/download order, not the messages' actual timing); it now
+  sorts manifests by `internal_date` ascending (oldest message first) before
+  flattening, so a downstream consumer sees attachments in real chronological
+  order (ADR-0008). Manifests with an equal `internal_date` keep a stable
+  tie-break — their relative order follows the input list. Interleaved
+  duplicates of the same manifest (e.g. `[A, B, A]`) may be **regrouped** by
+  the sort (e.g. `[A, A, B]`) — duplicates still pass through by count, just
+  not necessarily by position. Files *within* a single manifest (`files[]`)
+  are not reordered. A manifest with a malformed/naive `internal_date` can now
+  raise `ValueError` (from `from_local_iso`) under `pick="all"`, which
+  previously never read `internal_date` at all. `pick="latest"` is unchanged.
+
 ## [0.3.1] - 2026-07-23
 
 ### Added
@@ -196,6 +216,7 @@ disk). Parsing files is out of scope by design.
 - Example DAGs (`example_dags/`): daily S3 pull, local download → parse → cleanup,
   and a sensor-less S3 backfill with `overwrite=True`.
 
+[Unreleased]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.3.1...HEAD
 [0.3.1]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mkozhin/airflow-provider-gmail/compare/v0.1.0...v0.2.0
