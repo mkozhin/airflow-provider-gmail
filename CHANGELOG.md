@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`lookback_days` (operator + sensor) and `overwrite` (operator) are now
+  `template_fields`.** Both can be controlled via `dag_run.conf`/Jinja the same
+  way `date_from`/`date_to` already are (ADR-0004) — a one-off window
+  extension or a one-off backfill no longer requires editing and redeploying
+  the DAG file.
+
+### Changed
+
+- **The failure point for an invalid `lookback_days` literal moved from
+  DAG-parse-time to runtime.** A value like `lookback_days=-1` previously
+  raised at `__init__` (DAG parsing); it now raises in `execute()`/the first
+  `poke()`, because the same code path now serves both a plain literal and a
+  rendered template.
+- **`overwrite` is now validated at runtime via the new `resolve_overwrite`.**
+  It previously accepted any Python value with no validation at all. In
+  particular, `overwrite=None` — previously accepted silently and treated as
+  `False` — now raises `ValueError`.
+
+### Removed
+
+- **`validate_lookback_days` removed from `airflow_provider_gmail.dates`, with
+  no deprecated shim.** Superseded by `resolve_lookback_days`. This is a
+  potentially breaking change for any code importing `validate_lookback_days`
+  directly (see ADR-0009 / `docs/adr/0009-lookback-days-overwrite-templated.md`
+  for rationale).
+
 ## [0.4.0] - 2026-07-30
 
 ### Changed

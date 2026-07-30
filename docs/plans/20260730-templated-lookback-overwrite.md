@@ -931,7 +931,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
 - Modify: `CHANGELOG.md`
 - Modify: `example_dags/` (опционально — см. ниже)
 
-- [ ] обновить `CHANGELOG.md` (английский). Сейчас файл не использует секцию
+- [x] обновить `CHANGELOG.md` (английский). Сейчас файл не использует секцию
       `## [Unreleased]` — записи добавляются сразу под уже выпущенным
       заголовком версии (последний — `## [0.4.0] - 2026-07-30`, версия берётся
       из git-тега через setuptools-scm). Поскольку тега для этого изменения
@@ -951,15 +951,28 @@ assert record.args == (3,)  # int 3, а не строка "3"
         пометкой, что это потенциально breaking для кода, импортировавшего её
         напрямую (обоснование — см. Task 7/ADR-0009)
       - (README/доменная ловушка уже покрыты в Task 8/9, здесь не повторяются)
-- [ ] опционально добавить пример, управляемый `dag_run.conf`, для
+- [x] опционально добавить пример, управляемый `dag_run.conf`, для
       `lookback_days`/`overwrite` в существующий backfill example DAG в
       `example_dags/` (только если это не усложнит существующие фикстуры
       `tests/test_example_dags.py`, в частности assert
       `operators[0].overwrite is True` на строке 94, который сломается, если
       `overwrite` этого DAG станет шаблонной строкой вместо литерала `True`,
-      который проверяется сегодня — это nice-to-have, не обязательно)
-- [ ] прогнать тесты — должны пройти (актуально, если `example_dags/` был
-      затронут): `pytest tests/test_example_dags.py`
+      который проверяется сегодня — это nice-to-have, не обязательно) —
+      **пропущено**: `example_gmail_s3_backfill.py` передаёт
+      `overwrite=True` буквальным литералом именно потому, что
+      `test_backfill_dag_overwrites_and_has_no_storage_aware_sensor`
+      (`tests/test_example_dags.py:94`) проверяет `operators[0].overwrite is
+      True` — сырой, нерендеренный атрибут оператора, а не результат
+      рендеринга шаблона. Замена на Jinja-строку (например,
+      `"{{ dag_run.conf.get('overwrite', 'true') }}"`) сделала бы этот assert
+      падающим, поскольку `DagBag`-тесты не рендерят `template_fields`. Риск
+      явно перевешивает nice-to-have пункт плана, поэтому пример не добавлен;
+      `lookback_days`/`overwrite` уже templated и доступны любому DAG-автору
+      без изменений в `example_dags/`.
+- [x] прогнать тесты — должны пройти (актуально, если `example_dags/` был
+      затронут): `pytest tests/test_example_dags.py` — `example_dags/` не
+      затронут (см. пункт выше), тест всё равно прогнан в составе полного
+      набора (Step 2) и проходит.
 - [ ] перенести этот план в `docs/plans/completed/`
 
 ## Post-Completion
