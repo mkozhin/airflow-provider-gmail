@@ -884,31 +884,46 @@ assert record.args == (3,)  # int 3, а не строка "3"
 
 ### Task 10: Проверить критерии приёмки
 
-- [ ] убедиться, что `lookback_days` templated и кастуется в рантайме на
+- [x] убедиться, что `lookback_days` templated и кастуется в рантайме на
       обоих классах операторов и обоих классах сенсоров; `overwrite` — на
       базовом + S3-операторе, и (через наследование `template_fields`, без
       собственной публичной сигнатуры) технически тоже на локальном операторе
-      — см. Task 4
-- [ ] убедиться, что `validate_lookback_days` больше нигде не существует в
+      — см. Task 4 (подтверждено чтением `operators/gmail.py`/`sensors/gmail.py`:
+      `lookback_days: int | str` на всех четырёх `__init__`, `overwrite: bool | str`
+      на базовом + S3-операторе, каст через `resolve_lookback_days`/
+      `resolve_overwrite` в начале `_run()`/`_find_messages()`)
+- [x] убедиться, что `validate_lookback_days` больше нигде не существует в
       `src/` или `tests/` (`grep -rn validate_lookback_days src/ tests/`
-      ничего не находит)
-- [ ] убедиться, что WARNING «explicit range overrides non-default
-      lookback_days» корректно срабатывает со строковым `lookback_days` и на
-      операторе, и на сенсоре (тесты Task 6 проходят)
-- [ ] убедиться, что обычный (не-templated) DAG, использующий
+      ничего не находит) — подтверждено, grep не находит совпадений
+- [x] убедиться, что WARNING «explicit range overrides non-default
+      lookback_days» корректно срабатывает со строковым `lookback_days» и на
+      операторе, и на сенсоре (тесты Task 6 проходят) — подтверждено:
+      `test_explicit_range_with_string_lookback_days_still_warns` +
+      `test_explicit_range_with_string_lookback_days_equal_to_default_does_not_warn`
+      проходят и в `test_operator_base.py`, и в `test_sensor.py`
+- [x] убедиться, что обычный (не-templated) DAG, использующий
       `lookback_days=14`/`overwrite=True` как литеральные python-значения,
       продолжает работать без изменений (обратная совместимость для валидных
-      значений)
-- [ ] убедиться, что обычный `lookback_days=-1` теперь падает на
+      значений) — подтверждено прямой инстанциацией
+      `GmailAttachmentsToS3Operator(..., lookback_days=14, overwrite=True)`:
+      `__init__` не падает, атрибуты равны переданным значениям
+- [x] убедиться, что обычный `lookback_days=-1` теперь падает на
       `execute()`/первом `poke()`, а не на `__init__` (задокументированное,
-      осознанное изменение поведения — Task 7/ADR-0009)
-- [ ] прогнать полный набор тестов: `pytest`
-- [ ] прогнать покрытие: `pytest --cov=airflow_provider_gmail
+      осознанное изменение поведения — Task 7/ADR-0009) — подтверждено прямой
+      инстанциацией с `lookback_days=-1` (оператор и сенсор): `__init__` не
+      падает; тесты `test_negative_lookback_days_raises_at_execute_not_init`
+      (`test_operator_base.py`) и
+      `test_negative_lookback_days_raises_at_first_poke_not_init`
+      (`test_sensor.py`) проходят
+- [x] прогнать полный набор тестов: `pytest` — 557 passed, 1 deselected
+      (packaging marker)
+- [x] прогнать покрытие: `pytest --cov=airflow_provider_gmail
       --cov-report=term-missing` и убедиться в отсутствии регрессии
-      относительно текущих 99%
-- [ ] `pytest -m packaging` вне скоупа этого изменения (правок в области
-      упаковки нет) — пропустить, если не были затронуты
-      `pyproject.toml`/entry points
+      относительно текущих 99% — TOTAL 99% (837 stmts, 3 missing), без
+      регрессии
+- [x] `pytest -m packaging` вне скоупа этого изменения (правок в области
+      упаковки нет) — пропущено, как и указано в задаче;
+      `pyproject.toml`/entry points этим планом не затронуты
 
 ### Task 11: [Final] Обновить документацию
 
