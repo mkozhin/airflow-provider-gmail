@@ -473,7 +473,9 @@
       переупорядочены, `pick="latest"` не изменился, перегруппировка дублей
       задокументирована, новая гарантия запинена и на уровне `_resolve()`,
       и на уровне `resolve_attachments()`/оператора (перевёрнутые тесты)
-- [x] Полный набор: `pytest` — все проходят (505 passed, 1 deselected)
+- [x] Полный набор: `pytest` — все проходят (505 passed at the time of this
+      check, 1 deselected; grew to 506 after review phase 1's fixer added an
+      operator-level test, see Task 6 note below)
 - [x] Покрытие: `pytest --cov=airflow_provider_gmail --cov-report=term-missing`
       — не ниже текущего уровня (99%) (TOTAL 99%, 814 stmts / 3 miss)
 - [x] Перепроверить README.md/README_RU.md, `CONTEXT.md`,
@@ -485,9 +487,13 @@
 ### Task 6: [Final] Обновить документацию и закрыть план
 
 - [x] AGENTS.md/CLAUDE.md — проверить, нет ли там упоминаний порядка
-      `pick="all"` (сейчас нет, но перепроверить после Task 1-4) — подтверждено:
-      `grep -in 'pick\s*=\s*"all"\|input order\|входного списка\|internal_date'`
-      по обоим файлам не даёт совпадений, править нечего
+      `pick="all"` (сейчас нет, но перепроверить после Task 1-4) — подтверждено
+      на момент этой проверки: `grep -in 'pick\s*=\s*"all"\|input order\|входного
+      списка\|internal_date'` по обоим файлам не даёт совпадений. **Обновлено
+      review phase 1's fixer** (найдено documentation-агентом): AGENTS.md
+      действительно нуждался в новой записи о `pick="all"` — добавлен bullet в
+      `## Domain traps` (`AGENTS.md:70-73`) про `ValueError`/перегруппировку
+      дублей (ADR-0008); эта правка вошла в тот же коммит после ревью
 - [x] Убедиться, что ADR-0008 (Task 3) действительно добавлен и согласован с
       README/README_RU/CONTEXT.md/докстринги — файл
       `docs/adr/0008-resolve-all-sorts-by-internal-date.md` существует
