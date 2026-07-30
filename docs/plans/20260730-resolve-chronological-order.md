@@ -468,18 +468,19 @@
 
 ### Task 5: Verify acceptance criteria
 
-- [ ] Проверить требования из "Обзор": `pick="all"` сортирует по возрастанию
+- [x] Проверить требования из "Обзор": `pick="all"` сортирует по возрастанию
       `internal_date`, tie-break стабильный, файлы внутри манифеста не
       переупорядочены, `pick="latest"` не изменился, перегруппировка дублей
       задокументирована, новая гарантия запинена и на уровне `_resolve()`,
       и на уровне `resolve_attachments()`/оператора (перевёрнутые тесты)
-- [ ] Полный набор: `pytest` — все проходят
-- [ ] Покрытие: `pytest --cov=airflow_provider_gmail --cov-report=term-missing`
-      — не ниже текущего уровня (99%)
-- [ ] Перепроверить README.md/README_RU.md, `CONTEXT.md`,
+- [x] Полный набор: `pytest` — все проходят (505 passed, 1 deselected)
+- [x] Покрытие: `pytest --cov=airflow_provider_gmail --cov-report=term-missing`
+      — не ниже текущего уровня (99%) (TOTAL 99%, 814 stmts / 3 miss)
+- [x] Перепроверить README.md/README_RU.md, `CONTEXT.md`,
       `example_dags/example_gmail_to_s3.py`, `dates.py`/`resolve.py`/
       `operators/resolve.py` докстринги на согласованность формулировок друг с
-      другом (включая новый источник `ValueError`)
+      другом (включая новый источник `ValueError`) — все согласованы, ни одной
+      несостыковки не найдено, правок не потребовалось
 
 ### Task 6: [Final] Обновить документацию и закрыть план
 
