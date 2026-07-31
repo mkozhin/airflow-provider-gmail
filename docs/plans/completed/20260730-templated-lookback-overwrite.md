@@ -442,15 +442,15 @@ assert record.args == (3,)  # int 3, а не строка "3"
 - Modify: `src/airflow_provider_gmail/dates.py`
 - Modify: `tests/test_dates.py`
 
-- [ ] добавить `resolve_lookback_days(value: int | str | None) -> int` по Technical Details
-- [ ] добавить `resolve_overwrite(value: bool | str | int | None) -> bool` по
+- [x] добавить `resolve_lookback_days(value: int | str | None) -> int` по Technical Details
+- [x] добавить `resolve_overwrite(value: bool | str | int | None) -> bool` по
       Technical Details (`bool` проверяется до `int`, поскольку `bool` —
       подкласс `int`)
-- [ ] **пока оставить `validate_lookback_days` на месте** — не удалять её в
+- [x] **пока оставить `validate_lookback_days` на месте** — не удалять её в
       этой задаче (см. ограничение по порядку в Context); у неё ещё два живых
       вызывающих (`operators/gmail.py`, `sensors/gmail.py`), пока не выполнены
       Task 2 и Task 5a, и удаление здесь сломает сбор тестов для всего набора
-- [ ] обновить докстринг модуля в двух местах, не только в одном: открывающая
+- [x] обновить докстринг модуля в двух местах, не только в одном: открывающая
       фраза «Pure date/time helpers shared by the operators and the sensors»
       тоже становится неточной, поскольку `resolve_overwrite` — это не
       дата/время, а политика приведения типа; переформулировать её вместе с
@@ -461,11 +461,11 @@ assert record.args == (3,)  # int 3, а не строка "3"
       идущий следом список-перечисление хелперов модуля (`parse_date_range`,
       `to_local_date`/`to_local_iso`, `from_local_iso`) — иначе переформулировка
       без правки списка будет выглядеть недоделанной
-- [ ] обновить докстринг `tests/test_dates.py` (сейчас — «Tests for
+- [x] обновить докстринг `tests/test_dates.py` (сейчас — «Tests for
       :func:`...dates.from_local_iso`», т.е. привязан к одной функции) так,
       чтобы отражать, что модуль тестирует несколько независимых хелперов
       `dates.py`, а не только `from_local_iso`
-- [ ] написать тесты для `resolve_lookback_days` в `tests/test_dates.py`:
+- [x] написать тесты для `resolve_lookback_days` в `tests/test_dates.py`:
       строка `"14"` → `14`, нативный `int` проходит насквозь, отрицательное →
       `ValueError`, нативный `bool` (`True`/`False`) → `ValueError` (иначе
       `int(True) == 1` тихо превратил бы нативно отрендеренный `true` в
@@ -478,12 +478,12 @@ assert record.args == (3,)  # int 3, а не строка "3"
       упоминающим Jinja-выражение (нативный `None` важен, потому что
       `{{ dag_run.conf.get('x') }}` даёт python `None` напрямую при
       `render_template_as_native_obj=True`, а не только строку `"None"`)
-- [ ] написать тесты для `resolve_overwrite` в `tests/test_dates.py`:
+- [x] написать тесты для `resolve_overwrite` в `tests/test_dates.py`:
       `"true"`/`"True"`/`"1"` → `True`, `"false"`/`"0"` → `False`, нативный
       `bool` проходит насквозь (и `True`, и `False`), нативный `int` `1` →
       `True`, нативный `int` `0` → `False`, нативный `int` `2` → `ValueError`,
       `""`/`"None"`/нативный `None`/`"yes"`/мусор → `ValueError`
-- [ ] прогнать тесты — должны пройти перед task 2
+- [x] прогнать тесты — должны пройти перед task 2
 
 ### Task 2: Базовый оператор — templated `lookback_days` + `overwrite`
 
@@ -492,51 +492,51 @@ assert record.args == (3,)  # int 3, а не строка "3"
 - Modify: `src/airflow_provider_gmail/operators/gmail.py`
 - Modify: `tests/test_operator_base.py`
 
-- [ ] в `operators/gmail.py` заменить импорт `validate_lookback_days` на импорт
+- [x] в `operators/gmail.py` заменить импорт `validate_lookback_days` на импорт
       `resolve_lookback_days`, `resolve_overwrite` из
       `airflow_provider_gmail.dates` — импорт `validate_lookback_days` в этом
       файле можно убрать сразу, поскольку её вызов в `__init__` убирается
       следующим пунктом; сама функция остаётся определена в `dates.py`, пока
       Task 5a не уберёт отдельный (пока ещё живой) импорт сенсора, и Task 5b
       не удалит саму функцию; `validate_timezone` оставить как есть
-- [ ] добавить `"lookback_days"`, `"overwrite"` в
+- [x] добавить `"lookback_days"`, `"overwrite"` в
       `GmailAttachmentsBaseOperator.template_fields`
-- [ ] изменить аннотации `__init__` на `lookback_days: int | str = 7`,
+- [x] изменить аннотации `__init__` на `lookback_days: int | str = 7`,
       `overwrite: bool | str = False`; убрать вызов
       `validate_lookback_days(lookback_days)` из `__init__`; присваивание
       оставить как есть (`self.lookback_days = lookback_days`,
       `self.overwrite = overwrite`)
-- [ ] исправить ставший наполовину ложным инлайн-комментарий на
+- [x] исправить ставший наполовину ложным инлайн-комментарий на
       `operators/gmail.py:185-186` («Reject negative lookback ... fails at DAG
       parse») — верна только половина про timezone; переформулировать так,
       чтобы отражать, что `lookback_days` теперь валидируется в рантайме
-- [ ] в `_run()`: добавить `lookback_days = resolve_lookback_days(self.lookback_days)`
+- [x] в `_run()`: добавить `lookback_days = resolve_lookback_days(self.lookback_days)`
       и `overwrite = resolve_overwrite(self.overwrite)` в начале (после
       `run_id`/`ref_day`), заменить все последующие обращения к
       `self.lookback_days`/`self.overwrite` в методе (сравнение для WARNING,
       `Window.resolve(...)`, строку `manifest = None if ...`,
       `decide(manifest, run_id, ...)`) на локальные переменные
-- [ ] обновить докстринг класса: `lookback_days`/`overwrite` теперь templated и
+- [x] обновить докстринг класса: `lookback_days`/`overwrite` теперь templated и
       парсятся в рантайме, по аналогии с `date_from`/`date_to` (докстринга у
       `__init__` сегодня нет — контракт параметров живёт в докстринге класса и
       README, это покрыто в Task 9)
-- [ ] создать `tests/conftest.py` с общим хелпером `render_fields(op, **conf)`
+- [x] создать `tests/conftest.py` с общим хелпером `render_fields(op, **conf)`
       по Technical Details — без конструирования `DAG`/`DagBag`
-- [ ] обновить `test_template_fields_expected_set`, чтобы требовать наличие
+- [x] обновить `test_template_fields_expected_set`, чтобы требовать наличие
       `lookback_days` и `overwrite` в
       `GmailAttachmentsBaseOperator.template_fields` (этот тест уже использует
       subset-проверку — менять посылку не нужно)
-- [ ] заменить `test_init_negative_lookback_days_raises` (сейчас проверяет
+- [x] заменить `test_init_negative_lookback_days_raises` (сейчас проверяет
       исключение в момент `__init__`) на тест на исключение в рантайме:
       создать оператор с `lookback_days=-1`, убедиться, что `__init__` **не**
       падает, затем убедиться, что `execute()`/`_run()` падает с `ValueError`
-- [ ] добавить тест на рендер с помощью `render_fields`:
+- [x] добавить тест на рендер с помощью `render_fields`:
       `lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}"`, рендер с
       `lookback_days=14`, затем `execute()`/`_run()` и проверка, что итоговое
       окно `Window` использовало 14 дней
-- [ ] добавить негативный тест на рендер: та же настройка со значением conf
+- [x] добавить негативный тест на рендер: та же настройка со значением conf
       `-1`, убедиться, что `execute()` падает с `ValueError` (не проглатывается)
-- [ ] добавить один сквозной тест на **нативный** рендеринг
+- [x] добавить один сквозной тест на **нативный** рендеринг
       (`render_template_as_native_obj=True`): создать реальный `DAG(...,
       render_template_as_native_obj=True)`, привязать к нему оператор с
       `lookback_days` из шаблона (например, `"{{ dag_run.conf['lookback_days'] }}"`),
@@ -547,16 +547,16 @@ assert record.args == (3,)  # int 3, а не строка "3"
       нативно отрендеренный `int`/`bool` действительно доходит до
       `self.lookback_days`/`self.overwrite` через реальный `render_template_fields()`,
       а не только что резолверы умеют такие типы принимать
-- [ ] обновить докстринг модуля `tests/test_operator_base.py` (сейчас:
+- [x] обновить докстринг модуля `tests/test_operator_base.py` (сейчас:
       «...the `template_fields` set and `__init__` validation») — валидация
       `lookback_days` для этого файла больше не `__init__`-валидация, а
       рантайм-каст; переформулировать, не переписывая остальное
-- [ ] **не** менять `test_execute_nondefault_lookback_with_range_warns` (строка
+- [x] **не** менять `test_execute_nondefault_lookback_with_range_warns` (строка
       580) и `test_execute_default_lookback_with_range_does_not_warn` (строка
       591) в этой задаче — оба уже проходят с обычным `int`/без аргумента
       `lookback_days` и остаются такими; строковая версия этой регрессии — в
       исключительном владении Task 6, здесь не дублируется
-- [ ] прогнать тесты — должны пройти перед task 3
+- [x] прогнать тесты — должны пройти перед task 3
 
 ### Task 3: S3-оператор — покрытие рендера шаблона для `overwrite`
 
@@ -564,10 +564,10 @@ assert record.args == (3,)  # int 3, а не строка "3"
 - Modify: `src/airflow_provider_gmail/operators/gmail.py` (`GmailAttachmentsToS3Operator`: аннотация `__init__` + докстринг класса)
 - Modify: `tests/test_operator_s3.py`
 
-- [ ] изменить аннотацию `overwrite: bool = False` в
+- [x] изменить аннотацию `overwrite: bool = False` в
       `GmailAttachmentsToS3Operator.__init__` на `overwrite: bool | str = False`
       (проброс в базовый класс уже корректен, логика не меняется)
-- [ ] обновить докстринг класса: отметить, что `overwrite` теперь templated
+- [x] обновить докстринг класса: отметить, что `overwrite` теперь templated
       (унаследовано от базового класса) и сочетается с существующей заметкой
       про backfill через `date_from`/`date_to` (ADR-0004) — backfill,
       управляемый через `dag_run.conf`, теперь может переключать `overwrite`
@@ -578,7 +578,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
       (README.md:230 и докстринги S3-оператора/S3-сенсора) — DAG с этим
       сенсором и templated `overwrite` теперь может тихо встать в deadlock от
       простого изменения значения в `conf`, без правки самого DAG-файла
-- [ ] добавить тест на рендер (`render_fields` из `tests/conftest.py`):
+- [x] добавить тест на рендер (`render_fields` из `tests/conftest.py`):
       `overwrite="{{ dag_run.conf.get('overwrite', 'false') }}"`, рендер с
       `overwrite="true"`, затем запустить через существующие хелперы
       `_make_op`/`_run` плюс фикстуру манифеста, которая иначе привела бы к
@@ -586,9 +586,9 @@ assert record.args == (3,)  # int 3, а не строка "3"
       принудительной перезагрузки (по аналогии с
       `test_overwrite_true_forces_download_despite_current_manifest`, строка
       405, но со templated-значением)
-- [ ] добавить негативный тест на рендер: значение conf `"maybe"` →
+- [x] добавить негативный тест на рендер: значение conf `"maybe"` →
       `execute()` падает с `ValueError`
-- [ ] добавить тест на рендер значения `"false"` **с существующим манифестом
+- [x] добавить тест на рендер значения `"false"` **с существующим манифестом
       текущего run'а** (тот же фикстурный сетап, что использует
       `test_overwrite_true_forces_download_despite_current_manifest`, но
       наоборот): убедиться, что путь принудительной перезагрузки НЕ
@@ -601,7 +601,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
       `decide(manifest, run_id, overwrite)`), пройдёт оба существующих теста
       и всё равно трактует `"false"` как `True` по «правдивости» непустой
       строки — только явный тест на `"false"` это ловит
-- [ ] прогнать тесты — должны пройти перед task 4
+- [x] прогнать тесты — должны пройти перед task 4
 
 ### Task 4: Локальный оператор — аннотации + точная документация `overwrite`
 
@@ -609,9 +609,9 @@ assert record.args == (3,)  # int 3, а не строка "3"
 - Modify: `src/airflow_provider_gmail/operators/gmail.py` (`GmailAttachmentsToLocalOperator`: аннотация `__init__` + докстринг класса + инлайн-комментарий в `__init__`)
 - Modify: `tests/test_operator_local.py`
 
-- [ ] изменить аннотацию `lookback_days: int = 0` в
+- [x] изменить аннотацию `lookback_days: int = 0` в
       `GmailAttachmentsToLocalOperator.__init__` на `int | str = 0`
-- [ ] исправить в докстринге класса утверждение «There is no user-facing
+- [x] исправить в докстринге класса утверждение «There is no user-facing
       `overwrite` argument» на точное, а не желаемое: `overwrite` не входит в
       *явную* сигнатуру `__init__` этого класса, но **всё равно** достижим
       через проброс `**kwargs` в базовый `__init__` (проверено — см. Context) —
@@ -622,7 +622,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
       исключение через `resolve_overwrite`, хотя `_read_manifest()` для этого
       класса всегда возвращает `None`, так что результат каста никогда не
       меняет поведение здесь
-- [ ] исправить **ещё одно** место с той же неточной формулировкой — инлайн-
+- [x] исправить **ещё одно** место с той же неточной формулировкой — инлайн-
       комментарий в `GmailAttachmentsToLocalOperator.__init__`
       (`operators/gmail.py:717-718`): «No public ``overwrite`` argument: it is
       fixed at the base default (False) and never exposed here (see the class
@@ -632,15 +632,15 @@ assert record.args == (3,)  # int 3, а не строка "3"
       прямо опровергнута проверкой выше. Переформулировать в духе
       исправленного докстринга класса, а не оставить это внутреннее
       противоречие
-- [ ] `test_default_lookback_days_is_zero` (строка 146) и
+- [x] `test_default_lookback_days_is_zero` (строка 146) и
       `test_overwrite_attribute_false_but_not_in_public_signature` (строка
       155) проверяют поведение с *дефолтными* аргументами, на что правка
       только аннотации не влияет — убедиться, что оба продолжают проходить
       без изменений, а не редактировать их
-- [ ] добавить тест на рендер (`render_fields`):
+- [x] добавить тест на рендер (`render_fields`):
       `lookback_days="{{ dag_run.conf.get('lookback_days', 0) }}"`, рендер с
       `lookback_days=5` → окно построено на 5 дней
-- [ ] добавить один тест, документирующий проверенный проброс через kwargs —
+- [x] добавить один тест, документирующий проверенный проброс через kwargs —
       через `execute()`/`_run()`, а НЕ прямым вызовом `resolve_overwrite(op.overwrite)`
       (прямой вызов резолвера доказывает только, что сама функция работает, а
       не то, что рантайм локального оператора реально её применяет): создать
@@ -656,7 +656,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
       пробела (со ссылкой на пункт ADR-0009 «не исправлен этим планом» —
       Task 7), чтобы будущая правка, закрывающая этот пробел, не восприняла
       тест как гарантию контракта, которую нельзя менять
-- [ ] прогнать тесты — должны пройти перед task 5a
+- [x] прогнать тесты — должны пройти перед task 5a
 
 ### Task 5a: Базовый сенсор — templated `lookback_days`
 
@@ -665,72 +665,72 @@ assert record.args == (3,)  # int 3, а не строка "3"
 - Modify: `tests/test_sensor.py`
 - Modify: `tests/test_sensor_s3.py`
 
-- [ ] импортировать `resolve_lookback_days` из `airflow_provider_gmail.dates`,
+- [x] импортировать `resolve_lookback_days` из `airflow_provider_gmail.dates`,
       убрать импорт `validate_lookback_days` из этого файла (её вызов
       убирается следующим пунктом; сама функция в `dates.py` остаётся до
       Task 5b — это последний внутрипакетный потребитель); `validate_timezone`
       оставить как есть
-- [ ] добавить `"lookback_days"` в `GmailAttachmentSensor.template_fields`
-- [ ] изменить аннотацию `lookback_days: int = 7` в `__init__` на
+- [x] добавить `"lookback_days"` в `GmailAttachmentSensor.template_fields`
+- [x] изменить аннотацию `lookback_days: int = 7` в `__init__` на
       `int | str = 7`, убрать вызов `validate_lookback_days(lookback_days)`,
       присваивание оставить как есть
-- [ ] исправить ставший наполовину ложным инлайн-комментарий на
+- [x] исправить ставший наполовину ложным инлайн-комментарий на
       `sensors/gmail.py:124-125` (парный операторскому — верна только половина
       про timezone)
-- [ ] в `_find_messages()`: добавить `lookback_days =
+- [x] в `_find_messages()`: добавить `lookback_days =
       resolve_lookback_days(self.lookback_days)` в начале, заменить
       последующие обращения к `self.lookback_days` (сравнение для WARNING,
       `Window.resolve(...)`) на локальную переменную
-- [ ] обновить докстринг класса: `lookback_days` теперь templated, по аналогии
+- [x] обновить докстринг класса: `lookback_days` теперь templated, по аналогии
       с `date_from`/`date_to`; расширить существующую заметку «Pairing with
       the local operator: match `lookback_days`» указанием, что это верно
       независимо от того, обычный ли это int или отрендеренный шаблон
-- [ ] обновить `test_template_fields_match_base_operator` (строка 130, сейчас
+- [x] обновить `test_template_fields_match_base_operator` (строка 130, сейчас
       **строгое равенство**): её посылка меняется — базовый оператор теперь
       имеет и `lookback_days`, и `overwrite`, сенсор — только
       `lookback_days` — переименовать (например,
       `test_sensor_template_fields_are_operator_subset_minus_overwrite`) и
       проверять новый точный набор плюс комментарий, фиксирующий осознанную
       асимметрию
-- [ ] добавить `assert "overwrite" not in GmailAttachmentSensor.template_fields`
+- [x] добавить `assert "overwrite" not in GmailAttachmentSensor.template_fields`
       в `test_sensor_has_no_overwrite_parameter` (строка 183) — guard, который
       поймает случайный copy-paste `overwrite` в сенсор
-- [ ] заменить `test_negative_lookback_days_fails_at_init` на тест на
+- [x] заменить `test_negative_lookback_days_fails_at_init` на тест на
       исключение в рантайме: `__init__` с `lookback_days=-1` не падает,
       `poke()` падает (`ValueError`)
-- [ ] добавить тест на рендер (`render_fields` из `tests/conftest.py`):
+- [x] добавить тест на рендер (`render_fields` из `tests/conftest.py`):
       `lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}"`,
       `lookback_days=14` → `poke()` ищет в 14-дневном окне
-- [ ] **не** менять `test_range_override_warning_logged_once_across_pokes`
+- [x] **не** менять `test_range_override_warning_logged_once_across_pokes`
       (строка 194, единственный WARNING-тест сенсора) в этой задаче — она
       остаётся с обычным `int`; строковая версия — в исключительном владении Task 6
-- [ ] расширить `test_query_parity_with_local_operator` (строка 233) и/или
+- [x] расширить `test_query_parity_with_local_operator` (строка 233) и/или
       `test_query_parity_with_explicit_range` (строка 280) вариантом, где
       `lookback_days` передаётся **строкой** и сенсору, и оператору под
       тестом — доказывает, что сам каст остаётся идентичным между ними, а
       именно от этого зависит инвариант «query parity» теперь, когда
       `lookback_days` может быть templated
-- [ ] добавить один тест на рендер для `GmailAttachmentToS3Sensor` в
+- [x] добавить один тест на рендер для `GmailAttachmentToS3Sensor` в
       `tests/test_sensor_s3.py`, подтверждающий, что он наследует
       шаблонизированное поведение `lookback_days` без изменений через
       `_find_messages()` — для этого подкласса изменений продакшн-кода не
       ожидается (он не переопределяет `_find_messages()` ни обработку
       templated-полей в `__init__`); эта единственная проверка существует,
       чтобы доказать, что подкласс не был случайно упущен
-- [ ] прогнать тесты — должны пройти перед task 5b
+- [x] прогнать тесты — должны пройти перед task 5b
 
 ### Task 5b: Вывод из эксплуатации `validate_lookback_days`
 
 **Files:**
 - Modify: `src/airflow_provider_gmail/dates.py`
 
-- [ ] **теперь, когда оба потребителя мигрированы** (оператор в Task 2, сенсор
+- [x] **теперь, когда оба потребителя мигрированы** (оператор в Task 2, сенсор
       в Task 5a), полностью удалить `validate_lookback_days` из
       `src/airflow_provider_gmail/dates.py` (deprecated-обёртка не
       оставляется); отдельных тестов на неё нет (подтверждено в Task 1 —
       `tests/test_dates.py` их не создавал), поэтому в тестах удалять нечего
-- [ ] прогнать тесты — должны пройти перед task 6
-- [ ] убедиться, что `grep -rn validate_lookback_days src/ tests/` теперь не
+- [x] прогнать тесты — должны пройти перед task 6
+- [x] убедиться, что `grep -rn validate_lookback_days src/ tests/` теперь не
       находит ничего — именно в этой точке плана это становится верным
 
 ### Task 6: Регрессионный тест — сравнение в WARNING после каста
@@ -739,7 +739,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
 - Modify: `tests/test_operator_base.py`
 - Modify: `tests/test_sensor.py`
 
-- [ ] добавить `test_explicit_range_with_string_lookback_days_still_warns`
+- [x] добавить `test_explicit_range_with_string_lookback_days_still_warns`
       (оператор): заданы `date_from`/`date_to`, `lookback_days` передан
       **нестандартной строкой** (например, `"3"` при дефолте `7`,
       отрендерено через `render_fields`), убедиться, что WARNING срабатывает
@@ -747,23 +747,23 @@ assert record.args == (3,)  # int 3, а не строка "3"
       `record.args == (3,)`), чтобы доказать, что резолвенное значение —
       именно скастованный `int`, а не просто что отформатированный текст
       `%s` содержит `"3"` — это прошло бы одинаково и для `3`, и для `"3"`
-- [ ] добавить зеркальный не-варнящий случай для оператора: `lookback_days`
+- [x] добавить зеркальный не-варнящий случай для оператора: `lookback_days`
       передан строкой, равной *дефолту* (например, `"7"`), с явным диапазоном
       → WARNING НЕ должен сработать
-- [ ] добавить те же два случая (варнит / не варнит на строковом
+- [x] добавить те же два случая (варнит / не варнит на строковом
       `lookback_days`, с проверкой `LogRecord.args`) для `_find_messages()` сенсора
-- [ ] эта задача — **единственный владелец** проверок WARNING со строковым
+- [x] эта задача — **единственный владелец** проверок WARNING со строковым
       типом — Task 2 и Task 5a сознательно оставляют существующие int-тесты
       WARNING нетронутыми (см. примечания в этих задачах), так что
       дублирования нет, согласовывать нечего
-- [ ] прогнать тесты — должны пройти перед task 7
+- [x] прогнать тесты — должны пройти перед task 7
 
 ### Task 7: ADR-0009 — задокументировать решение
 
 **Files:**
 - Create: `docs/adr/0009-lookback-days-overwrite-templated.md`
 
-- [ ] написать ADR в существующем стиле (см. ADR-0004/0005): Context
+- [x] написать ADR в существующем стиле (см. ADR-0004/0005): Context
       (симметрия с `date_from`/`date_to`, ADR-0004; контраст с
       `attachment_pattern`, остающимся не templated по ADR-0005 — не
       пересматривается), Decision (`lookback_days` + `overwrite` templated,
@@ -818,14 +818,14 @@ assert record.args == (3,)  # int 3, а не строка "3"
         пакета, а не просто «случайно публичны» из-за отсутствия `_`-префикса.
         Отметить удаление в CHANGELOG как потенциально breaking для прямых
         импортов, не как внутренний рефакторинг (см. Task 11)
-- [ ] тесты не требуются — задача только про документацию
+- [x] тесты не требуются — задача только про документацию
 
 ### Task 8: `AGENTS.md` — доменная ловушка
 
 **Files:**
 - Modify: `AGENTS.md`
 
-- [ ] добавить пункт в «Domain traps» (рядом с существующим про `pick="all"`):
+- [x] добавить пункт в «Domain traps» (рядом с существующим про `pick="all"`):
       `lookback_days`/`overwrite` templated и на обоих операторах, и (для
       `lookback_days`) на обоих сенсорах; отрендеренное пустое/`None`/`"None"`
       значение — это жёсткий `ValueError`, а не тихий откат к дефолту
@@ -833,7 +833,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
       невалидный литерал `lookback_days` теперь падает в рантайме, а не в
       момент парсинга DAG; `overwrite`, ранее не валидировавшийся, теперь
       тоже строго валидируется
-- [ ] тесты не требуются — задача только про документацию
+- [x] тесты не требуются — задача только про документацию
 
 ### Task 9: `README.md` / `README_RU.md` — обновления таблицы параметров
 
@@ -841,13 +841,13 @@ assert record.args == (3,)  # int 3, а не строка "3"
 - Modify: `README.md`
 - Modify: `README_RU.md`
 
-- [ ] обновить тип строки `lookback_days` на `int \| str` и добавить
+- [x] обновить тип строки `lookback_days` на `int \| str` и добавить
       «Templated.» к описанию, в таблице параметров базового оператора
       (README.md:138, плюс русский эквивалент) — раздел про сенсоры
       (README.md:162-170) — это проза, утверждающая, что сенсоры полностью
       повторяют параметры оператора, так что отдельной правки строки
       `lookback_days` для сенсора не требуется
-- [ ] обновить тип строки `overwrite` на `bool \| str` и добавить «Templated.»
+- [x] обновить тип строки `overwrite` на `bool \| str` и добавить «Templated.»
       к описанию (README.md:151, плюс русский эквивалент); также отметить, что
       раньше он не валидировался, а теперь строго валидируется. Эта строка
       физически находится в таблице «`GmailAttachmentsToS3Operator` adds:» —
@@ -857,7 +857,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
       добавить рядом одну фразу, что технически поле шаблонизируется на
       базовом уровне, а не только для S3 — иначе таблица создаст впечатление,
       что `overwrite` templated исключительно для S3-оператора
-- [ ] исправить **третье** место с тем же неточным утверждением «There is no
+- [x] исправить **третье** место с тем же неточным утверждением «There is no
       public `overwrite` argument» — заметку под таблицей локального оператора
       (README.md:159-160: «there is **no public `overwrite`** argument — the
       local operator always overwrites», и её русский эквивалент
@@ -866,49 +866,64 @@ assert record.args == (3,)  # int 3, а не строка "3"
       и (после этого плана) может быть шаблонной строкой. Без этой правки
       получится, что докстринг класса в коде говорит одно, а README — прямо
       противоположное
-- [ ] добавить одно предложение в прозу вокруг таблицы, формулирующее строгое
+- [x] добавить одно предложение в прозу вокруг таблицы, формулирующее строгое
       правило фолбэка: пустое/незаданное отрендеренное значение — исключение,
       а не тихий откат к дефолту класса — дефолт внутри самого Jinja-выражения
       задаёт DAG-автор
-- [ ] явно перечислить в прозе принимаемые отрендеренные формы `overwrite`:
+- [x] явно перечислить в прозе принимаемые отрендеренные формы `overwrite`:
       строки `"true"`/`"false"` (регистронезависимо), `"1"`/`"0"`, нативные
       `bool`/`int` `0`/`1` при `render_template_as_native_obj=True`; добавить
       один конкретный пример Jinja-выражения с дефолтом
       (`"{{ dag_run.conf.get('overwrite', 'false') }}"`), чтобы не оставлять
       это только в докстринге кода
-- [ ] прогнать существующий набор тестов (изменений тестов здесь не
+- [x] прогнать существующий набор тестов (изменений тестов здесь не
       ожидается, но это трогает пользовательскую документацию, на которую
       косвенно ссылаются другие тесты — убедиться, что ничего не сломалось):
       `pytest`
-- [ ] прогнать тесты — должны пройти перед task 10
+- [x] прогнать тесты — должны пройти перед task 10
 
 ### Task 10: Проверить критерии приёмки
 
-- [ ] убедиться, что `lookback_days` templated и кастуется в рантайме на
+- [x] убедиться, что `lookback_days` templated и кастуется в рантайме на
       обоих классах операторов и обоих классах сенсоров; `overwrite` — на
       базовом + S3-операторе, и (через наследование `template_fields`, без
       собственной публичной сигнатуры) технически тоже на локальном операторе
-      — см. Task 4
-- [ ] убедиться, что `validate_lookback_days` больше нигде не существует в
+      — см. Task 4 (подтверждено чтением `operators/gmail.py`/`sensors/gmail.py`:
+      `lookback_days: int | str` на всех четырёх `__init__`, `overwrite: bool | str`
+      на базовом + S3-операторе, каст через `resolve_lookback_days`/
+      `resolve_overwrite` в начале `_run()`/`_find_messages()`)
+- [x] убедиться, что `validate_lookback_days` больше нигде не существует в
       `src/` или `tests/` (`grep -rn validate_lookback_days src/ tests/`
-      ничего не находит)
-- [ ] убедиться, что WARNING «explicit range overrides non-default
-      lookback_days» корректно срабатывает со строковым `lookback_days` и на
-      операторе, и на сенсоре (тесты Task 6 проходят)
-- [ ] убедиться, что обычный (не-templated) DAG, использующий
+      ничего не находит) — подтверждено, grep не находит совпадений
+- [x] убедиться, что WARNING «explicit range overrides non-default
+      lookback_days» корректно срабатывает со строковым `lookback_days» и на
+      операторе, и на сенсоре (тесты Task 6 проходят) — подтверждено:
+      `test_explicit_range_with_string_lookback_days_still_warns` +
+      `test_explicit_range_with_string_lookback_days_equal_to_default_does_not_warn`
+      проходят и в `test_operator_base.py`, и в `test_sensor.py`
+- [x] убедиться, что обычный (не-templated) DAG, использующий
       `lookback_days=14`/`overwrite=True` как литеральные python-значения,
       продолжает работать без изменений (обратная совместимость для валидных
-      значений)
-- [ ] убедиться, что обычный `lookback_days=-1` теперь падает на
+      значений) — подтверждено прямой инстанциацией
+      `GmailAttachmentsToS3Operator(..., lookback_days=14, overwrite=True)`:
+      `__init__` не падает, атрибуты равны переданным значениям
+- [x] убедиться, что обычный `lookback_days=-1` теперь падает на
       `execute()`/первом `poke()`, а не на `__init__` (задокументированное,
-      осознанное изменение поведения — Task 7/ADR-0009)
-- [ ] прогнать полный набор тестов: `pytest`
-- [ ] прогнать покрытие: `pytest --cov=airflow_provider_gmail
+      осознанное изменение поведения — Task 7/ADR-0009) — подтверждено прямой
+      инстанциацией с `lookback_days=-1` (оператор и сенсор): `__init__` не
+      падает; тесты `test_negative_lookback_days_raises_at_execute_not_init`
+      (`test_operator_base.py`) и
+      `test_negative_lookback_days_raises_at_first_poke_not_init`
+      (`test_sensor.py`) проходят
+- [x] прогнать полный набор тестов: `pytest` — 557 passed, 1 deselected
+      (packaging marker)
+- [x] прогнать покрытие: `pytest --cov=airflow_provider_gmail
       --cov-report=term-missing` и убедиться в отсутствии регрессии
-      относительно текущих 99%
-- [ ] `pytest -m packaging` вне скоупа этого изменения (правок в области
-      упаковки нет) — пропустить, если не были затронуты
-      `pyproject.toml`/entry points
+      относительно текущих 99% — TOTAL 99% (837 stmts, 3 missing), без
+      регрессии
+- [x] `pytest -m packaging` вне скоупа этого изменения (правок в области
+      упаковки нет) — пропущено, как и указано в задаче;
+      `pyproject.toml`/entry points этим планом не затронуты
 
 ### Task 11: [Final] Обновить документацию
 
@@ -916,7 +931,7 @@ assert record.args == (3,)  # int 3, а не строка "3"
 - Modify: `CHANGELOG.md`
 - Modify: `example_dags/` (опционально — см. ниже)
 
-- [ ] обновить `CHANGELOG.md` (английский). Сейчас файл не использует секцию
+- [x] обновить `CHANGELOG.md` (английский). Сейчас файл не использует секцию
       `## [Unreleased]` — записи добавляются сразу под уже выпущенным
       заголовком версии (последний — `## [0.4.0] - 2026-07-30`, версия берётся
       из git-тега через setuptools-scm). Поскольку тега для этого изменения
@@ -936,15 +951,28 @@ assert record.args == (3,)  # int 3, а не строка "3"
         пометкой, что это потенциально breaking для кода, импортировавшего её
         напрямую (обоснование — см. Task 7/ADR-0009)
       - (README/доменная ловушка уже покрыты в Task 8/9, здесь не повторяются)
-- [ ] опционально добавить пример, управляемый `dag_run.conf`, для
+- [x] опционально добавить пример, управляемый `dag_run.conf`, для
       `lookback_days`/`overwrite` в существующий backfill example DAG в
       `example_dags/` (только если это не усложнит существующие фикстуры
       `tests/test_example_dags.py`, в частности assert
       `operators[0].overwrite is True` на строке 94, который сломается, если
       `overwrite` этого DAG станет шаблонной строкой вместо литерала `True`,
-      который проверяется сегодня — это nice-to-have, не обязательно)
-- [ ] прогнать тесты — должны пройти (актуально, если `example_dags/` был
-      затронут): `pytest tests/test_example_dags.py`
+      который проверяется сегодня — это nice-to-have, не обязательно) —
+      **пропущено**: `example_gmail_s3_backfill.py` передаёт
+      `overwrite=True` буквальным литералом именно потому, что
+      `test_backfill_dag_overwrites_and_has_no_storage_aware_sensor`
+      (`tests/test_example_dags.py:94`) проверяет `operators[0].overwrite is
+      True` — сырой, нерендеренный атрибут оператора, а не результат
+      рендеринга шаблона. Замена на Jinja-строку (например,
+      `"{{ dag_run.conf.get('overwrite', 'true') }}"`) сделала бы этот assert
+      падающим, поскольку `DagBag`-тесты не рендерят `template_fields`. Риск
+      явно перевешивает nice-to-have пункт плана, поэтому пример не добавлен;
+      `lookback_days`/`overwrite` уже templated и доступны любому DAG-автору
+      без изменений в `example_dags/`.
+- [x] прогнать тесты — должны пройти (актуально, если `example_dags/` был
+      затронут): `pytest tests/test_example_dags.py` — `example_dags/` не
+      затронут (см. пункт выше), тест всё равно прогнан в составе полного
+      набора (Step 2) и проходит.
 - [ ] перенести этот план в `docs/plans/completed/`
 
 ## Post-Completion

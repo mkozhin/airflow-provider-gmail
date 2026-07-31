@@ -1,8 +1,10 @@
 """Tests for :mod:`airflow_provider_gmail.operators.gmail` — base interface + helpers.
 
 Covers the pure helpers (``to_local_date``/``to_local_iso``, ``resolve_collisions``,
-``parse_date_range``), the ``template_fields`` set and ``__init__`` validation.
-``execute()`` orchestration is Task 8 and is not exercised here. The abstract
+``parse_date_range``), the ``template_fields`` set, ``__init__`` validation
+(``timezone``/``attachment_pattern``, both still validated at construction time),
+and the runtime cast/validation of the templated ``lookback_days``/``overwrite``
+(ADR-0009), which now happens in ``_run`` rather than ``__init__``. The abstract
 operator is instantiated through a tiny concrete subclass implementing the
 storage seam.
 """
@@ -17,6 +19,9 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from airflow.exceptions import AirflowSkipException
+from airflow.models import DAG
+
+from conftest import render_fields
 
 from airflow_provider_gmail.hooks.gmail import MessageWithAttachments
 from airflow_provider_gmail.manifest import FileEntry, Manifest
@@ -30,6 +35,7 @@ from airflow_provider_gmail.operators.gmail import (
 )
 from airflow_provider_gmail.utils.mime import Attachment
 from airflow_provider_gmail.utils.paths import MANIFEST_FILENAME, manifest_key, message_dir
+from airflow_provider_gmail.window import Window
 
 MSK = "Europe/Moscow"
 
@@ -217,6 +223,8 @@ def test_template_fields_expected_set():
         "filename_contains",
         "date_from",
         "date_to",
+        "lookback_days",
+        "overwrite",
     }
     assert expected <= set(GmailAttachmentsBaseOperator.template_fields)
     # attachment_pattern must NOT be templated (ADR-0005).
@@ -233,9 +241,30 @@ def test_init_valid_defaults():
     assert op._compiled_pattern is None
 
 
-def test_init_negative_lookback_days_raises():
+def test_init_negative_lookback_days_does_not_raise():
+    # lookback_days is templated now (ADR-0009): __init__ no longer validates
+    # it, so an invalid literal is accepted as-is at construction time.
+    op = _make_operator(lookback_days=-1)
+    assert op.lookback_days == -1
+
+
+def test_negative_lookback_days_raises_at_execute_not_init():
+    op = _make_operator(lookback_days=-1)
     with pytest.raises(ValueError):
-        _make_operator(lookback_days=-1)
+        op.execute(_context())
+
+
+def test_overwrite_none_literal_does_not_raise_at_init_but_raises_at_execute():
+    # The concrete backward-incompatibility case called out in the plan's
+    # Development Approach: a DAG writing `overwrite=some_dict.get("overwrite")`
+    # (plain Python, no Jinja at all) used to get `None`, silently treated as
+    # `False`. After ADR-0009, resolve_overwrite(None) raises instead of a
+    # silent fallback. __init__ must still accept it as-is (overwrite is
+    # templated, no __init__-time validation).
+    op = _make_operator(overwrite=None)
+    assert op.overwrite is None
+    with pytest.raises(ValueError):
+        op.execute(_context())
 
 
 def test_init_unknown_timezone_raises():
@@ -596,6 +625,132 @@ def test_execute_default_lookback_with_range_does_not_warn(caplog):
         with pytest.raises(AirflowSkipException):
             _run(op, hook)
     assert not any("lookback_days" in r.message for r in caplog.records)
+
+
+# -- templated lookback_days/overwrite (ADR-0009) ----------------------------
+
+
+def test_execute_renders_lookback_days_from_template():
+    op = _DictOperator(
+        task_id="t",
+        source="avito",
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
+    )
+    render_fields(op, lookback_days=14)
+    assert op.lookback_days == "14"  # rendered (string-mode Jinja), not yet cast
+
+    hook = _FakeHook([])
+    with pytest.raises(AirflowSkipException):
+        _run(op, hook)
+
+    expected = Window.resolve(_context()["data_interval_end"], MSK, 14)
+    assert hook.window == expected
+
+
+def test_execute_renders_invalid_lookback_days_raises():
+    op = _DictOperator(
+        task_id="t",
+        source="avito",
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
+    )
+    render_fields(op, lookback_days=-1)
+    hook = _FakeHook([])
+    with pytest.raises(ValueError):
+        _run(op, hook)
+
+
+def test_execute_invalid_lookback_days_raises_even_with_explicit_range():
+    # ADR-0009's documented trade-off: resolve_lookback_days() runs
+    # unconditionally at the top of _run(), even when date_from/date_to are
+    # given and Window.resolve() would end up ignoring lookback_days entirely.
+    # A garbage rendered lookback_days must still raise, proving the cast is
+    # NOT short-circuited by the presence of an explicit range.
+    op = _DictOperator(
+        task_id="t",
+        source="avito",
+        date_from="2026-07-01",
+        date_to="2026-07-10",
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
+    )
+    render_fields(op, lookback_days=-1)
+    hook = _FakeHook([])
+    with pytest.raises(ValueError):
+        _run(op, hook)
+
+
+def test_explicit_range_with_string_lookback_days_still_warns(caplog):
+    # Task 6 (ADR-0009 regression): the WARNING comparison casts BEFORE
+    # comparing against default_lookback_days. If a templated (string)
+    # lookback_days were ever compared as a string against the int default,
+    # "3" != 7 would still warn "by accident" (string vs int always differ),
+    # masking a real bug. Assert the captured LogRecord.args instead of the
+    # formatted message: the %s-formatted text renders 3 and "3" identically,
+    # so only the raw args prove the resolved value is an int, not a string.
+    op = _DictOperator(
+        task_id="t",
+        source="avito",
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
+        date_from="2026-07-01",
+    )
+    render_fields(op, lookback_days="3")
+    hook = _FakeHook([])
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(AirflowSkipException):
+            _run(op, hook)
+    records = [r for r in caplog.records if "lookback_days" in r.getMessage()]
+    assert len(records) == 1
+    assert records[0].args == (3,)  # int 3, not the string "3"
+
+
+def test_explicit_range_with_string_lookback_days_equal_to_default_does_not_warn(
+    caplog,
+):
+    # Mirror case: a templated lookback_days that renders to the STRING form of
+    # the class default ("7" vs default_lookback_days == 7) must NOT warn —
+    # proves the comparison casts before comparing, rather than warning
+    # whenever the rendered value happens to be a str.
+    op = _DictOperator(
+        task_id="t",
+        source="avito",
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
+        date_from="2026-07-01",
+    )
+    render_fields(op, lookback_days="7")
+    hook = _FakeHook([])
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(AirflowSkipException):
+            _run(op, hook)
+    assert not any("lookback_days" in r.message for r in caplog.records)
+
+
+def test_execute_native_rendered_int_lookback_days_builds_expected_window():
+    # render_template_as_native_obj=True hands back a real python int (not a
+    # string) from dag_run.conf — resolve_lookback_days must accept it as-is,
+    # and the rendered value must actually reach self.lookback_days through a
+    # real render_template_fields() pass, not just work when the resolver is
+    # called directly (Task 1 only proved the resolver itself).
+    dag = DAG(
+        "native_lookback_days_dag",
+        start_date=datetime(2026, 1, 1, tzinfo=ZoneInfo("UTC")),
+        schedule=None,
+        render_template_as_native_obj=True,
+    )
+    op = _DictOperator(
+        task_id="t",
+        source="avito",
+        lookback_days="{{ dag_run.conf['lookback_days'] }}",
+        dag=dag,
+    )
+    render_fields(op, lookback_days=14)
+    assert op.lookback_days == 14
+    assert isinstance(op.lookback_days, int)
+
+    hook = _FakeHook([])
+    with pytest.raises(AirflowSkipException):
+        _run(op, hook)
+
+    expected = Window.resolve(_context()["data_interval_end"], MSK, 14)
+    assert hook.window == expected
 
 
 # -- orchestration tri-state -------------------------------------------------

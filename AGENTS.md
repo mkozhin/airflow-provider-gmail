@@ -59,6 +59,7 @@ This provider follows the standard layout codified by the **`airflow-pypi-provid
 - Always install with the constraint pin (see *Development commands*), otherwise `>=2.9,<3` pulls Airflow 2.11.
 - Tests use pytest; mock at the `googleapiclient` service level (`hook.get_conn()`), no network.
 - The packaging smoke test (`python -m build` → install wheel → assert `get_provider_info()` / `ProvidersManager`) is marked `@pytest.mark.packaging` and **excluded from the default run** (slow/brittle). Run it explicitly when touching packaging.
+- `tests/conftest.py` holds a shared `render_fields(op, **conf)` helper for rendering `template_fields` via a bare `SandboxedEnvironment` (no `DAG`/`DagBag` needed) — it is a plain function, not a fixture, so each test module must `from conftest import render_fields` explicitly; pytest does not auto-inject it.
 
 ## Domain traps (see ADRs / plan)
 
@@ -71,3 +72,15 @@ This provider follows the standard layout codified by the **`airflow-pypi-provid
   malformed/naive `internal_date` now raises `ValueError` on `pick="all"` too
   (previously only `pick="latest"` read the field), and interleaved duplicates
   of the same manifest get regrouped by the sort, not preserved in input position.
+- `lookback_days` (both operators, both sensors) and `overwrite` (operator only)
+  are `template_fields`, cast/validated at runtime (`resolve_lookback_days`/
+  `resolve_overwrite` in `dates.py`) via `execute()`/`poke()`, not at DAG-parse
+  time (ADR-0009). The fallback is **strict**: a rendered empty string/`None`/
+  literal `"None"` raises `ValueError` instead of silently falling back to the
+  class default — the DAG author must put the default inside the Jinja
+  expression itself (e.g. `{{ dag_run.conf.get('lookback_days', 7) }}`). An
+  invalid literal `lookback_days` (e.g. `-1`) now fails at `execute()`/first
+  `poke()` instead of at `__init__`. `overwrite` was previously **not
+  validated at all**; it now goes through the same strict `resolve_overwrite`,
+  including rejecting `overwrite=None` (previously silently treated as
+  `False`).

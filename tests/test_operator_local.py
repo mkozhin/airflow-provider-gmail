@@ -20,10 +20,13 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from conftest import render_fields
+
 from airflow_provider_gmail.hooks.gmail import GmailHook, MessageWithAttachments
 from airflow_provider_gmail.dates import to_local_date
 from airflow_provider_gmail.operators.gmail import GmailAttachmentsToLocalOperator
 from airflow_provider_gmail.utils.mime import Attachment
+from airflow_provider_gmail.window import Window
 
 MSK = "Europe/Moscow"
 CURRENT_RUN = "scheduled__2026-07-12T06:00:00+00:00"
@@ -159,6 +162,68 @@ def test_overwrite_attribute_false_but_not_in_public_signature():
     # ...but it must NOT be a public __init__ argument (not "no attribute").
     params = inspect.signature(GmailAttachmentsToLocalOperator.__init__).parameters
     assert "overwrite" not in params
+
+
+# -- templated lookback_days / overwrite-via-kwargs (ADR-0009) ---------------
+
+
+def test_execute_renders_lookback_days_from_template(tmp_path):
+    from airflow.exceptions import AirflowSkipException
+
+    op = _make_op(
+        tmp_path,
+        lookback_days="{{ dag_run.conf.get('lookback_days', 0) }}",
+    )
+    render_fields(op, lookback_days=5)
+    assert op.lookback_days == "5"  # rendered (string-mode Jinja), not yet cast
+
+    hook = FakeGmailHook([])
+    with pytest.raises(AirflowSkipException):
+        # no messages match → base execute() skips, but the window is built
+        # (and resolve_lookback_days applied) before that decision is reached.
+        _run(op, hook)
+
+    expected = Window.resolve(_context()["data_interval_end"], MSK, 5)
+    assert hook.window == expected
+
+
+def test_overwrite_via_kwargs_templated_string_is_characterization(tmp_path):
+    """Characterization test (Task 4/ADR-0009): NOT a contract to preserve.
+
+    ``overwrite`` is not part of this class's explicit ``__init__`` signature,
+    but it is still reachable through ``**kwargs`` into the base ``__init__``
+    (documented, pre-existing gap — see the class docstring), and now that
+    ``overwrite`` is templated on the base class, that includes a Jinja string.
+    This test documents today's actual behavior; it does not assert a contract
+    that a future fix closing the kwargs gap is obligated to keep passing.
+    """
+    op = _make_op(
+        tmp_path,
+        overwrite="{{ dag_run.conf.get('overwrite', 'false') }}",
+    )
+    render_fields(op, overwrite="true")
+    assert op.overwrite == "true"
+
+    msg = _message("msg1", "a.xlsx")
+    hook = FakeGmailHook([msg])
+    result = _run(op, hook)  # does not raise: resolve_overwrite("true") is valid
+    assert hook.downloaded == [("msg1", "a.xlsx")]
+    assert result == [os.path.join(_msg_dir(tmp_path, msg), "_manifest.json")]
+
+
+def test_overwrite_via_kwargs_invalid_rendered_value_raises(tmp_path):
+    # Same gap as above, but an invalid rendered value: resolve_overwrite still
+    # runs unconditionally in the base _run(), even though its result can never
+    # change this class's behavior (_read_manifest() always returns None here).
+    op = _make_op(
+        tmp_path,
+        overwrite="{{ dag_run.conf.get('overwrite', 'false') }}",
+    )
+    render_fields(op, overwrite="maybe")
+
+    hook = FakeGmailHook([_message("msg1", "a.xlsx")])
+    with pytest.raises(ValueError, match="overwrite"):
+        _run(op, hook)
 
 
 def test_destination_path_is_absolute(tmp_path):

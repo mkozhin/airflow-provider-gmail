@@ -26,8 +26,8 @@ from airflow.sensors.base import BaseSensorOperator
 
 from airflow_provider_gmail.dates import (
     parse_date_range,
+    resolve_lookback_days,
     to_local_date,
-    validate_lookback_days,
     validate_timezone,
 )
 from airflow_provider_gmail.hooks.gmail import (
@@ -73,13 +73,27 @@ class GmailAttachmentSensor(BaseSensorOperator):
     so the same search is reproduced. There is no ``overwrite``: it only affects
     an operator's download/deliver decision and has no meaning for a sensor.
 
+    ``lookback_days`` is **templated** (ADR-0009): cast/validated in
+    :meth:`_find_messages` after rendering, via
+    :func:`~airflow_provider_gmail.dates.resolve_lookback_days`, the same
+    pattern as ``date_from``/``date_to``. The fallback is strict — a rendered
+    empty string, ``"None"``, or a native ``None`` raises :class:`ValueError`
+    rather than silently falling back to the class default; the DAG author is
+    responsible for a default *inside* the Jinja expression itself (e.g.
+    ``{{ dag_run.conf.get('lookback_days', 7) }}``). A plain Python literal (no
+    Jinja) still works exactly as before for a *valid* value; an invalid
+    literal (e.g. ``lookback_days=-1``) now fails at the first ``poke()``
+    instead of at ``__init__`` (DAG-parse time), because the same runtime path
+    now serves both the literal and the template.
+
     **Pairing with the local operator: match ``lookback_days``.** This sensor's
     default ``lookback_days`` is ``7``, but :class:`GmailAttachmentsToLocalOperator`
     defaults to ``0`` ("today only"). Query parity only holds when the two agree,
     so when you place this sensor in front of the local operator you **must** set
     the same ``lookback_days`` on both (typically ``lookback_days=0`` on the
     sensor) — otherwise the sensor may fire on a message the operator's narrower
-    window never returns, and the DAG hangs.
+    window never returns, and the DAG hangs. This holds whether ``lookback_days``
+    is a plain ``int`` or a rendered template on either side.
     """
 
     #: The sensor's *default* ``lookback_days``, used only to decide whether to
@@ -95,6 +109,7 @@ class GmailAttachmentSensor(BaseSensorOperator):
         "filename_contains",
         "date_from",
         "date_to",
+        "lookback_days",
     )
 
     def __init__(
@@ -108,7 +123,7 @@ class GmailAttachmentSensor(BaseSensorOperator):
         has_attachment: bool = False,
         filename_contains: str | None = None,
         attachment_pattern: str | None = None,
-        lookback_days: int = 7,
+        lookback_days: int | str = 7,
         mark_processed: bool = False,
         label_suffix: str | None = None,
         timezone: str = "Europe/Moscow",
@@ -121,9 +136,12 @@ class GmailAttachmentSensor(BaseSensorOperator):
         # otherwise hold a worker slot for the entire (possibly multi-hour) wait.
         super().__init__(mode=mode, **kwargs)
 
-        # Reject negative lookback and an unknown timezone eagerly so bad config
-        # fails at DAG parse, not on the first poke — parity with the operator.
-        validate_lookback_days(lookback_days)
+        # Reject an unknown timezone eagerly so a typo fails at DAG parse, not
+        # deep inside a run (shared with the operator). ``lookback_days`` is
+        # templated (ADR-0009): it is cast/validated at runtime in
+        # ``_find_messages``, after rendering — not here — because it must
+        # accept a rendered template string the same way it accepts a plain
+        # literal.
         validate_timezone(timezone)
 
         # Compile the pattern in __init__ so a bad regex fails at DAG parse
@@ -183,10 +201,18 @@ class GmailAttachmentSensor(BaseSensorOperator):
         ref_day = context["data_interval_end"]
         label_name = resolve_label_name(self.label_suffix)
 
+        # Cast/validate the templated lookback_days here, right after rendering,
+        # so the same code path handles both a plain literal and a rendered
+        # Jinja string (ADR-0009). Unconditional even in explicit-range mode,
+        # where Window.resolve below ends up ignoring lookback_days — a
+        # garbage-rendered value still fails fast rather than being silently
+        # skipped (documented trade-off, see ADR-0009).
+        lookback_days = resolve_lookback_days(self.lookback_days)
+
         date_from, date_to = parse_date_range(self.date_from, self.date_to)
         if (
             (date_from is not None or date_to is not None)
-            and (self.lookback_days != self.default_lookback_days)
+            and (lookback_days != self.default_lookback_days)
             and not self._range_warning_logged
         ):
             # Log once per instance: poke() runs every poke_interval for hours, so
@@ -195,11 +221,11 @@ class GmailAttachmentSensor(BaseSensorOperator):
             self.log.warning(
                 "An explicit date_from/date_to range was given; the non-default "
                 "lookback_days=%s is ignored.",
-                self.lookback_days,
+                lookback_days,
             )
 
         window = Window.resolve(
-            ref_day, self.timezone, self.lookback_days, date_from, date_to
+            ref_day, self.timezone, lookback_days, date_from, date_to
         )
         query = self.hook.build_query(
             window,

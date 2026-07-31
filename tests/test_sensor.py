@@ -18,11 +18,15 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from airflow.exceptions import AirflowSkipException
+from airflow.models import DAG
+
+from conftest import render_fields
 
 from airflow_provider_gmail.hooks.gmail import GmailHook, MessageWithAttachments
 from airflow_provider_gmail.operators.gmail import GmailAttachmentsToLocalOperator
 from airflow_provider_gmail.sensors.gmail import GmailAttachmentSensor
 from airflow_provider_gmail.utils.mime import Attachment
+from airflow_provider_gmail.window import Window
 
 MSK = "Europe/Moscow"
 
@@ -127,7 +131,13 @@ def _poke(sensor, hook) -> bool:
 # -- config ------------------------------------------------------------------
 
 
-def test_template_fields_match_base_operator():
+def test_sensor_template_fields_are_operator_subset_minus_overwrite():
+    # The base operator's template_fields now also carries "overwrite"
+    # (ADR-0009), so "matches the base operator" is no longer literally true —
+    # the sensor's set is the operator's set minus "overwrite" (overwrite has
+    # no meaning for a sensor, see test_sensor_has_no_overwrite_parameter).
+    from airflow_provider_gmail.operators.gmail import GmailAttachmentsBaseOperator
+
     tf = set(GmailAttachmentSensor.template_fields)
     assert tf == {
         "query",
@@ -137,7 +147,9 @@ def test_template_fields_match_base_operator():
         "filename_contains",
         "date_from",
         "date_to",
+        "lookback_days",
     }
+    assert tf == set(GmailAttachmentsBaseOperator.template_fields) - {"overwrite"}
 
 
 def test_default_mode_is_reschedule():
@@ -165,12 +177,18 @@ def test_invalid_attachment_pattern_fails_at_init():
         _make_sensor(attachment_pattern="([")
 
 
-def test_negative_lookback_days_fails_at_init():
-    # Parity with the operator base __init__: a negative lookback_days must be
-    # rejected at construction (DAG parse), not silently accepted and turned into
-    # a future `after:` boundary on the first poke.
+def test_negative_lookback_days_does_not_raise_at_init():
+    # lookback_days is templated now (ADR-0009): __init__ no longer validates
+    # it, so an invalid literal is accepted as-is at construction time.
+    sensor = _make_sensor(lookback_days=-1)
+    assert sensor.lookback_days == -1
+
+
+def test_negative_lookback_days_raises_at_first_poke_not_init():
+    sensor = _make_sensor(lookback_days=-1)
+    hook = FakeGmailHook([])
     with pytest.raises(ValueError):
-        _make_sensor(lookback_days=-1)
+        _poke(sensor, hook)
 
 
 def test_unknown_timezone_fails_at_init():
@@ -189,6 +207,10 @@ def test_sensor_has_no_overwrite_parameter():
     with pytest.raises(AirflowException):
         _make_sensor(overwrite=True)
     assert not hasattr(_make_sensor(), "overwrite")
+    # Guard against a copy-paste of "overwrite" into the sensor's
+    # template_fields tuple (it inherited "lookback_days" from the operator
+    # base but must never inherit/declare "overwrite").
+    assert "overwrite" not in GmailAttachmentSensor.template_fields
 
 
 def test_range_override_warning_logged_once_across_pokes(caplog):
@@ -202,6 +224,126 @@ def test_range_override_warning_logged_once_across_pokes(caplog):
         _poke(sensor, hook)
     warnings = [r for r in caplog.records if "lookback_days" in r.getMessage()]
     assert len(warnings) == 1
+
+
+# -- templated lookback_days (ADR-0009) ---------------------------------------
+
+
+def test_explicit_range_with_string_lookback_days_still_warns(caplog):
+    # Task 6 (ADR-0009 regression), sensor side: same cast-before-compare
+    # guard as the operator's mirror test. Assert LogRecord.args (not the
+    # formatted message) to prove the resolved value is an int, not the
+    # rendered string.
+    sensor = _make_sensor(
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
+        date_from="2026-07-01",
+    )
+    render_fields(sensor, lookback_days="3")
+    hook = FakeGmailHook([])
+    with caplog.at_level("WARNING"):
+        _poke(sensor, hook)
+    records = [r for r in caplog.records if "lookback_days" in r.getMessage()]
+    assert len(records) == 1
+    assert records[0].args == (3,)  # int 3, not the string "3"
+
+
+def test_explicit_range_with_string_lookback_days_equal_to_default_does_not_warn(
+    caplog,
+):
+    # Mirror case: templated lookback_days rendering to the STRING form of the
+    # class default ("7") must NOT warn.
+    sensor = _make_sensor(
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
+        date_from="2026-07-01",
+    )
+    render_fields(sensor, lookback_days="7")
+    hook = FakeGmailHook([])
+    with caplog.at_level("WARNING"):
+        _poke(sensor, hook)
+    assert not any("lookback_days" in r.message for r in caplog.records)
+
+
+def test_poke_renders_lookback_days_from_template():
+    sensor = _make_sensor(
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}"
+    )
+    render_fields(sensor, lookback_days=14)
+    assert sensor.lookback_days == "14"  # rendered (string-mode Jinja), not yet cast
+
+    hook = FakeGmailHook([])
+    _poke(sensor, hook)
+
+    expected = GmailHook("unused").build_query(
+        Window.resolve(_context()["data_interval_end"], MSK, 14),
+        None,
+        None,
+        False,
+        None,
+        None,
+    )
+    assert hook.built_query == expected
+
+
+def test_poke_renders_invalid_lookback_days_raises():
+    sensor = _make_sensor(
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}"
+    )
+    render_fields(sensor, lookback_days=-1)
+    hook = FakeGmailHook([])
+    with pytest.raises(ValueError):
+        _poke(sensor, hook)
+
+
+def test_poke_invalid_lookback_days_raises_even_with_explicit_range():
+    # Mirror of the operator's equivalent test (ADR-0009's documented
+    # trade-off): resolve_lookback_days() runs unconditionally at the top of
+    # _find_messages(), even when date_from/date_to are given and
+    # Window.resolve() would end up ignoring lookback_days entirely. A garbage
+    # rendered lookback_days must still raise.
+    sensor = _make_sensor(
+        date_from="2026-07-01",
+        date_to="2026-07-10",
+        lookback_days="{{ dag_run.conf.get('lookback_days', 7) }}",
+    )
+    render_fields(sensor, lookback_days=-1)
+    hook = FakeGmailHook([])
+    with pytest.raises(ValueError):
+        _poke(sensor, hook)
+
+
+def test_poke_native_rendered_int_lookback_days_builds_expected_window():
+    # render_template_as_native_obj=True hands back a real python int (not a
+    # string) from dag_run.conf — resolve_lookback_days must accept it as-is,
+    # and the rendered value must actually reach self.lookback_days through a
+    # real render_template_fields() pass.
+    dag = DAG(
+        "native_lookback_days_sensor_dag",
+        start_date=datetime(2026, 1, 1, tzinfo=ZoneInfo("UTC")),
+        schedule=None,
+        render_template_as_native_obj=True,
+    )
+    sensor = GmailAttachmentSensor(
+        task_id="s",
+        source="avito",
+        lookback_days="{{ dag_run.conf['lookback_days'] }}",
+        dag=dag,
+    )
+    render_fields(sensor, lookback_days=14)
+    assert sensor.lookback_days == 14
+    assert isinstance(sensor.lookback_days, int)
+
+    hook = FakeGmailHook([])
+    _poke(sensor, hook)
+
+    expected = GmailHook("unused").build_query(
+        Window.resolve(_context()["data_interval_end"], MSK, 14),
+        None,
+        None,
+        False,
+        None,
+        None,
+    )
+    assert hook.built_query == expected
 
 
 # -- poke --------------------------------------------------------------------
@@ -275,6 +417,43 @@ def test_query_parity_with_local_operator():
     assert sensor_hook.find_label_id_calls == ["airflow/processed/avito"]
     assert op_hook.find_label_id_calls == ["airflow/processed/avito"]
     assert sensor_hook.exclude_label_id == op_hook.exclude_label_id == "Label_proc"
+
+
+def test_query_parity_with_local_operator_string_lookback_days():
+    """Query parity holds when lookback_days is passed as a string to both.
+
+    Proves the cast itself stays identical between sensor and operator when
+    lookback_days is templated (ADR-0009) — not just when it is a plain int.
+    """
+    common = {
+        "source": "avito",
+        "from_email": "reports@avito.ru",
+        "subject_contains": "Отчёт",
+        "has_attachment": True,
+        "filename_contains": "report",
+        "attachment_pattern": r"\.xlsx$",
+        "lookback_days": "3",
+        "mark_processed": True,
+        "label_suffix": "avito",
+        "timezone": MSK,
+    }
+
+    sensor = GmailAttachmentSensor(task_id="s", **common)
+    sensor_hook = FakeGmailHook([_message("msg1", "report.xlsx")])
+    sensor_hook.label_id_to_return = "Label_proc"
+    sensor.hook = sensor_hook
+    sensor.poke(_context())
+
+    op = GmailAttachmentsToLocalOperator(task_id="t", path="/data/gmail/avito", **common)
+    op_hook = FakeGmailHook([])
+    op_hook.label_id_to_return = "Label_proc"
+    op.hook = op_hook
+    with pytest.raises(AirflowSkipException):
+        op.execute(_context())
+
+    assert sensor_hook.built_query is not None
+    assert op_hook.built_query is not None
+    assert sensor_hook.built_query == op_hook.built_query
 
 
 def test_query_parity_with_explicit_range():

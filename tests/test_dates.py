@@ -1,9 +1,12 @@
-"""Tests for :func:`airflow_provider_gmail.dates.from_local_iso`.
+"""Tests for the independent helpers in :mod:`airflow_provider_gmail.dates`.
 
-The inverse of :func:`to_local_iso`: parses a manifest ``internal_date`` string
-back into an aware :class:`datetime`. A naive (offset-less) or malformed string
-must raise :class:`ValueError` right at the parse point — never a lexicographic
-compare or an opaque ``TypeError`` deeper down.
+Covers :func:`from_local_iso` (the inverse of :func:`to_local_iso`: parses a
+manifest ``internal_date`` string back into an aware :class:`datetime` — a
+naive/offset-less or malformed string must raise :class:`ValueError` right at
+the parse point, never a lexicographic compare or an opaque ``TypeError``
+deeper down), and :func:`resolve_lookback_days`/:func:`resolve_overwrite` (cast
+a templated or plain-literal ``lookback_days``/``overwrite`` value at runtime,
+with a strict fallback — no silent default on an empty/``None``/garbage render).
 """
 
 from __future__ import annotations
@@ -14,7 +17,12 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from airflow_provider_gmail import dates
-from airflow_provider_gmail.dates import from_local_iso, to_local_iso
+from airflow_provider_gmail.dates import (
+    from_local_iso,
+    resolve_lookback_days,
+    resolve_overwrite,
+    to_local_iso,
+)
 
 MSK = "Europe/Moscow"
 UTC = "UTC"
@@ -183,3 +191,102 @@ def test_internal_error_propagates_not_masked(monkeypatch, exc):
     monkeypatch.setattr(dates, "datetime", _Fake)
     with pytest.raises(exc):
         from_local_iso("2026-07-10T09:14:22+00:00")
+
+
+# -- resolve_lookback_days ----------------------------------------------------
+
+
+def test_resolve_lookback_days_string_digit_parses():
+    assert resolve_lookback_days("14") == 14
+
+
+def test_resolve_lookback_days_native_int_passes_through():
+    assert resolve_lookback_days(14) == 14
+
+
+def test_resolve_lookback_days_zero_is_valid():
+    assert resolve_lookback_days(0) == 0
+    assert resolve_lookback_days("0") == 0
+
+
+def test_resolve_lookback_days_negative_string_raises():
+    with pytest.raises(ValueError, match="lookback_days must be >= 0"):
+        resolve_lookback_days("-1")
+
+
+def test_resolve_lookback_days_negative_int_raises():
+    with pytest.raises(ValueError, match="lookback_days must be >= 0"):
+        resolve_lookback_days(-1)
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_resolve_lookback_days_native_bool_raises(value):
+    # int(True) == 1 would otherwise silently turn a native-Jinja-rendered
+    # `true` into a 1-day window instead of rejecting it.
+    with pytest.raises(ValueError, match="must be an integer"):
+        resolve_lookback_days(value)
+
+
+@pytest.mark.parametrize("value", [1.9, 3.0])
+def test_resolve_lookback_days_float_raises_even_when_whole(value):
+    # int(1.9) == 1 would otherwise silently narrow the window; even a "whole"
+    # float like 3.0 is rejected — no exception for round values.
+    with pytest.raises(ValueError, match="must be an integer"):
+        resolve_lookback_days(value)
+
+
+@pytest.mark.parametrize("value", ["", "None", "abc", None])
+def test_resolve_lookback_days_garbage_render_raises_mentioning_jinja(value):
+    with pytest.raises(ValueError, match="Jinja"):
+        resolve_lookback_days(value)
+
+
+def test_resolve_lookback_days_jinja_undefined_raises_value_error():
+    # Regression: under render_template_as_native_obj=True, bracket access to
+    # a missing dag_run.conf key (e.g. {{ dag_run.conf['lookback_days'] }})
+    # does not raise at render time -- Airflow leaves a jinja2 `Undefined`
+    # sentinel assigned to the attribute instead. `int(Undefined())` raises
+    # jinja2.exceptions.UndefinedError, not TypeError/ValueError; without an
+    # explicit type check this would escape the resolver uncaught and break
+    # the documented "always ValueError" strict-fallback contract.
+    from jinja2.runtime import StrictUndefined
+
+    with pytest.raises(ValueError, match="Jinja"):
+        resolve_lookback_days(StrictUndefined(name="lookback_days"))
+
+
+# -- resolve_overwrite ---------------------------------------------------------
+
+
+@pytest.mark.parametrize("value", ["true", "True", "TRUE", "1"])
+def test_resolve_overwrite_true_strings(value):
+    assert resolve_overwrite(value) is True
+
+
+@pytest.mark.parametrize("value", ["false", "False", "FALSE", "0"])
+def test_resolve_overwrite_false_strings(value):
+    assert resolve_overwrite(value) is False
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_resolve_overwrite_native_bool_passes_through(value):
+    assert resolve_overwrite(value) is value
+
+
+def test_resolve_overwrite_native_int_one_is_true():
+    assert resolve_overwrite(1) is True
+
+
+def test_resolve_overwrite_native_int_zero_is_false():
+    assert resolve_overwrite(0) is False
+
+
+def test_resolve_overwrite_native_int_other_raises():
+    with pytest.raises(ValueError, match="overwrite must render to true/false"):
+        resolve_overwrite(2)
+
+
+@pytest.mark.parametrize("value", ["", "None", None, "yes", "garbage"])
+def test_resolve_overwrite_garbage_render_raises(value):
+    with pytest.raises(ValueError, match="overwrite must render to true/false"):
+        resolve_overwrite(value)
