@@ -241,6 +241,20 @@ def test_resolve_lookback_days_garbage_render_raises_mentioning_jinja(value):
         resolve_lookback_days(value)
 
 
+def test_resolve_lookback_days_jinja_undefined_raises_value_error():
+    # Regression: under render_template_as_native_obj=True, bracket access to
+    # a missing dag_run.conf key (e.g. {{ dag_run.conf['lookback_days'] }})
+    # does not raise at render time -- Airflow leaves a jinja2 `Undefined`
+    # sentinel assigned to the attribute instead. `int(Undefined())` raises
+    # jinja2.exceptions.UndefinedError, not TypeError/ValueError; without an
+    # explicit type check this would escape the resolver uncaught and break
+    # the documented "always ValueError" strict-fallback contract.
+    from jinja2.runtime import StrictUndefined
+
+    with pytest.raises(ValueError, match="Jinja"):
+        resolve_lookback_days(StrictUndefined(name="lookback_days"))
+
+
 # -- resolve_overwrite ---------------------------------------------------------
 
 

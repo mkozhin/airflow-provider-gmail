@@ -92,9 +92,23 @@ def resolve_lookback_days(value: int | str | None) -> int:
             f"lookback_days must be an integer, got {value!r} "
             "(a fractional value is not a valid number of days)"
         )
+    if not isinstance(value, (int, str)):
+        # Reached for e.g. a native `None`, or a `jinja2.Undefined` sentinel:
+        # Airflow's native rendering (render_template_as_native_obj=True)
+        # does not raise at render time for `{{ dag_run.conf['x'] }}` on a
+        # missing key — it silently assigns the `Undefined` object instead.
+        # `int(Undefined())` raises `jinja2.exceptions.UndefinedError`, not
+        # `TypeError`/`ValueError`, which would otherwise escape this
+        # function uncaught and break the documented strict-`ValueError`
+        # fallback contract. Reject every non-int/str type here, before
+        # `int()` ever sees it.
+        raise ValueError(
+            f"lookback_days must be an integer, got {value!r} "
+            "(check the DAG's Jinja expression renders a number)"
+        )
     try:
         parsed = int(value)
-    except (TypeError, ValueError) as exc:
+    except ValueError as exc:
         raise ValueError(
             f"lookback_days must be an integer, got {value!r} "
             "(check the DAG's Jinja expression renders a number)"
@@ -125,6 +139,10 @@ def resolve_overwrite(value: bool | str | int | None) -> bool:
         if low in ("false", "0"):
             return False
     elif isinstance(value, int):
+        # `bool` is a subclass of `int` in Python, so this branch is only
+        # reached for a genuine int — the `isinstance(value, bool)` check
+        # above must run first, or a native `True`/`False` would fall
+        # through to here instead (see ADR-0009).
         # Covers native Jinja rendering (render_template_as_native_obj=True),
         # where a conf value of 0/1 arrives as a real int, not "0"/"1".
         if value in (0, 1):
